@@ -1,6 +1,6 @@
 <div align="center">
 
-# Benchmark Everything Everywhere All at Once
+# 🌍 Benchmark Everything Everywhere All at Once
 
 <p><strong>BenchHarness</strong> builds custom benchmarks for language and multimodal models from natural-language evaluation goals.</p>
 
@@ -14,13 +14,13 @@
 
 </div>
 
-## Introduction
+## 🌟 Introduction
 
 As models improve, scores on existing benchmarks can converge near the ceiling. BenchHarness lets researchers test specific capabilities with new questions grounded in annotated data. Describe the capability and the desired number of items, and BenchHarness finds suitable source material, constructs questions, and reviews the resulting items before export.
 
 The paper evaluates 16 benchmarks with 200 items each across image-text, audio-text, and image-audio-text tasks. In paired comparisons on subsets of six benchmarks, generated items were harder for the evaluated models and revealed larger performance gaps than the corresponding source items.
 
-## Framework Overview
+## 🧠 Framework Overview
 
 <p align="center">
   <img src="assets/method.png" width="95%" alt="BenchHarness research architecture showing the Benchmark Planner, Benchmark Executor, and shared tool library">
@@ -30,7 +30,7 @@ The paper evaluates 16 benchmarks with 200 items each across image-text, audio-t
 
 The **Benchmark Planner** turns a user goal into subtasks, dataset selections, construction blueprints, and sample quotas. The **Benchmark Executor** uses that plan to build and review individual items with a shared library of tools.
 
-## Key Features
+## ✨ Key Features
 
 | Feature | What you can do |
 | --- | --- |
@@ -39,17 +39,18 @@ The **Benchmark Planner** turns a user goal into subtasks, dataset selections, c
 | Multimodal construction | Build items with text, images, speech, or a combination of them. The executor can use tools such as OCR, image operations, and speech synthesis. |
 | Review and reproducibility | Check task fit, reference answers, and output format. Keep intermediate artifacts so a run can resume from its cache. |
 
-## Contents
+## 📌 Contents
 
-- [Quick Start](#quick-start)
+- [Quick Start](#-quick-start)
   - [Installation](#installation)
   - [Configuration](#configuration)
   - [Prepare Inputs](#prepare-inputs)
   - [Run](#run)
-- [How BenchHarness Works](#how-benchharness-works)
-- [Citation](#citation)
+- [How BenchHarness Works](#-how-benchharness-works)
+- [To-Do List](#-to-do-list)
+- [Citation](#-citation)
 
-## Quick Start
+## ⚡ Quick Start
 
 ### Installation
 
@@ -105,13 +106,19 @@ python synthesize_audio.py --input-cache-dir cache/user_queries/user_query_29 --
 
 Omit `--music-root` for runs without background-music jobs. The audio step writes playable media and `evaluation_ready.json` to the run directory.
 
-## How BenchHarness Works
+## ✨ How BenchHarness Works
 
 1. **Design and grounding.** The Design Agent breaks the requirement into testable subtasks with modality and answer constraints. The Grounding Agent searches candidate datasets, inspects representative samples, and drafts blueprints for the sources it selects.
 2. **Allocation.** The Allocation Agent assigns quotas across subtasks and datasets based on task priority and source capacity.
 3. **Execution and review.** The Executor proposes ways to turn a source record into an item, designs the question and answer basis, and constructs the item with the required tools. Review checks task fit, answer validity, and format. Items can be repaired and reviewed again before acceptance and export.
 
-## Citation
+## 📋 To-Do List
+
+Roadmap items for upcoming releases. Contributions welcome! Please open an issue or PR if you'd like to help.
+
+- [ ] **Interactive UI**
+
+## 📖 Citation
 
 ```bibtex
 @misc{xiong2026benchmark,

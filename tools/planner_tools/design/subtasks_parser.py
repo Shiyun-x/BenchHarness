@@ -5,204 +5,35 @@
 # Used as the first step in the benchmark construction pipeline.
 # -----------------------------------------------------------------------------
 import json
+import re
 from typing import Dict, Any, List, Optional
 from utils.llm_caller import llm_call_json
 
 
 PROMPT_TEMPLATE = r"""
-You are the Subtask Proposer in a benchmark construction system.
+Propose 1-3 useful evaluation subtasks for this benchmark goal. Each must directly test the user's core capability and have a distinct purpose; the set should collectively cover the request. Do not require every task to repeat the entire request or force a split when one task suffices. Avoid generic taxonomies, isolated prerequisite skills and differences based only on topic, wording or answer format.
 
-Input:
-- task_id: {task_id}
-- target_size: {target_size}
-- raw_user_description:
-\"\"\"{description}\"\"\"
+Define each subtask as an individual input-to-answer task; comparisons across samples are outside the subtask requirements.
 
-==================== Your role ====================
+Describe WHAT each task tests and its meaningful distinction, concisely and without a fixed sentence count. Do not design final samples or prescribe how every sample must become difficult. Leave room for diverse challenging constructions. Consider plausible data use without asserting that datasets have already been found; preserve the evaluation goal rather than choosing a weaker task for easy retrieval.
 
-Your job is to propose a strong candidate set of benchmark subtasks.
+Use any provided guidance and working set to complement or improve the design. New subtask ids must be st_01, st_02, etc., numbered in order after the highest existing numeric id. Keep an existing id only for an intentional replacement, with unique ids within this proposal. Respect explicit user requirements. Scope topic/keywords guide retrieval, not new hard limits; use modalities appropriate to the actual task and the user's requirements.
 
-You are not finalizing the benchmark. A downstream Design Agent will review, select, revise, or discard your proposals.
+QA interface
+- Return exactly the subtask fields shown below. Use answer_type binary, choice, label or span as appropriate; prefer choice when equally suitable, not at the expense of the tested capability.
+- Input fields are question (required), context, image_url and audio_url (optional). Include only fields the task needs. Simple schema does not mean an easy test. Do not duplicate answer-bearing media with redundant textual context.
+- Output has only answer. Each field has dtype (text/image/audio), subtype and type. Image and audio fields use str|list for one path or a list of paths; other fields use str/list. The answer uses dtype text and type str; answer subtypes are binary:yes_no, choice:multiple_choice, label:multi_class, span:extractive_span.
+- For choice tasks, options go in question, never in context or a separate field. Do not add evidence, rationale, explanation, supporting_turns, candidates or answer_id fields.
+- Give 3-6 short retrieval keywords per task, describing useful capability/task cues. Do not add unused modality fields as placeholders.
 
-Be creatively helpful:
-- surface meaningful evaluation angles,
-- propose subtasks that are non-redundant and useful together,
-- and aim to give the downstream Design Agent a strong candidate set to choose from.
+Input
+task_id: {task_id}
+target_size: {target_size}
+User requirement:
+{description}
 
-But stay disciplined:
-- every subtask must fit the required QA schema,
-- every subtask must have a structured and evaluable answer,
-- and the final set must remain compact, concrete, and realistically executable.
-
-We are decomposing the user's benchmark goal, not listing a generic capability taxonomy.
-
-==================== What is a "subtask" in this system? ====================
-
-A subtask is a structured QA-style evaluation unit derived from the user's benchmark request.
-
-Each subtask must:
-1. Be grounded in the user's evaluation intent.
-2. Represent one coherent and understandable evaluation angle.
-3. Preserve the user's core requested capability, while varying the concrete evaluation direction.
-4. Be non-redundant relative to other subtasks.
-5. Be useful in combination with the other subtasks for covering the benchmark goal.
-6. Be practical enough to implement from existing or transformable data sources.
-7. Produce structured, evaluable answers rather than open-ended free-form outputs.
-8. Have a unified sample schema that downstream transformation and generation can use.
-
-==================== Key design principles ====================
-
-Subtasks should be:
-- **Relevant**: tied to what the user actually wants to evaluate.
-- **Concrete**: names and descriptions should be understandable and actionable.
-- **Executable**: downstream should plausibly be able to generate or transform data into this form.
-- **Jointly sufficient**: together they should cover the evaluation intent well.
-- **Non-redundant**: avoid duplicates, while allowing slight overlap when it helps reflect the benchmark goal naturally.
-- **Compact**: propose 1-3 subtasks.
-
-Subtasks must not be overly fragmented. Every subtask must directly evaluate the user's core requested capability; differences between subtasks should mainly come from additional abilities, evidence constraints, or concrete implementation conditions.
-
-Every proposed subtask should be comprehensive enough to cover the user's overall core requirement directly. Other subtasks may emphasize narrower variants or stress conditions, but they should not become isolated micro-skills detached from the main benchmark goal.
-
-Prefer subtasks that collectively reveal meaningful differences in failure modes, evidence requirements, or reasoning demands, without forcing an artificial split.
-
-Do not create separate subtasks solely because of:
-- minor wording differences,
-- minor difficulty differences,
-- individual low-level operations that only test a small fragment of the user's requested capability,
-- answer format differences alone,
-- or superficial domain/topic variations.
-
-Slight overlap across subtasks is acceptable when the benchmark theme naturally requires it. The goal is not perfect separation; the goal is a set that is useful, non-redundant, and jointly representative of the user's demand.
-
-==================== Scope guidance ====================
-
-If benchmark scope is provided separately, treat it as guidance rather than a rigid boundary.
-
-Use it to stay aligned with the benchmark topic and likely modalities, but still propose the best candidate subtasks for the user's real evaluation goal.
-
-Do not invent wildly unrelated subtasks, but do not be overly constrained if a slightly refined decomposition better serves the benchmark intent.
-
-==================== Answer format requirement ====================
-
-All subtasks must use QA with **structured, evaluable answers** such as:
-- binary (yes/no)
-- choice (multiple-choice)
-- label (multi-class)
-- span (span extraction)
-
-Avoid open-ended free-text answers unless the user clearly requires them.
-Prefer `choice` whenever it fits the capability being tested. Multiple-choice answers are easier to score and usually work well for generated benchmark samples.
-
-Important: do not decompose mainly by answer format. First decide the evaluation distinction, then choose the most suitable structured answer type.
-
-==================== Sample schema rules ====================
-
-All subtasks must use QA format:
-    evaluation_unit = "QA"
-
-Keep every sample schema minimal. The benchmark instance should look like a simple question-answer problem, not a complex annotation task.
-
-Input fields (fixed family only):
-    - "question" (required, exactly one)
-    - "context" (optional, 0 or 1)
-    - "image_url" (optional, 0 or 1)
-    - "audio_url" (optional, 0 or 1)
-
-If a modality is not used, do not include that field.
-
-Text-only tasks should usually use:
-    question + optional context
-
-Audio tasks should usually use:
-    audio_url + question
-Use context only if essential background is not already contained in the audio.
-
-Image tasks should usually use:
-    image_url + question
-Use context only if essential background is not already contained in the image.
-
-For multimodal tasks, if the needed information is already in the modality input, do not add redundant context.
-
-Do NOT add fields such as "candidates", "options", "evidence", "supporting_turns", "answer_id", "rationale", "label", or "explanation".
-For multiple-choice tasks, include the answer choices inside the question text or compact context, not as a separate schema field.
-
-Modalities:
-    dtype ∈ {{text, image, audio}}
-
-Type:
-    type ∈ {{str, list}}
-
-Output fields:
-- exactly one field: "answer" (required; structured/evaluable; subtype must match answer_type)
-
-Examples:
-- answer_type="binary" → subtype="yes_no"
-- answer_type="choice" → subtype="multiple_choice"
-- answer_type="label" → subtype="multi_class"
-- answer_type="span" → subtype="extractive_span"
-
-==================== Decomposition criteria ====================
-
-Subtasks should be decomposed along evaluation-relevant distinctions that matter to the user goal, such as:
-- what semantic distinction is being tested,
-- what evidence or information must be used,
-- what reasoning condition is required,
-- what comparison or decision operator is involved,
-- what abstraction level or granularity matters,
-- what modality meaningfully changes the evaluation,
-- and what kind of structured answer best fits the task after the distinction is chosen.
-
-These dimensions are open-ended. Do not rely on a fixed taxonomy.
-
-Keep the decomposition at the benchmark-goal level. Do not split the user's requested capability into prerequisite micro-operations unless those operations are themselves meaningful evaluation directions for the full benchmark goal.
-
-==================== Retrieval metadata per subtask ====================
-
-Each subtask in your output must specify:
-- modalities: the modalities used by that subtask
-- keywords: 3-6 short search cues for dataset retrieval
-
-==================== Output format (STRICT JSON) ====================
-
-{{
-  "subtasks": [
-    {{
-      "id": "st_01",
-      "name": "string",
-      "description": "2-5 sentences explaining what capability is tested, what evidence/input matters, what answer is expected, and why this subtask matters for the benchmark goal",
-      "answer_type": "binary | choice | label | span",
-      "modalities": [...],
-      "sample_schema": {{
-        "input": {{
-          "fields": {{
-            "question": {{ "dtype": "...", "subtype": "...", "type": "str" }},
-            "context": {{ "dtype": "...", "subtype": "...", "type": "str" }},
-            "image_url": {{ "dtype": "...", "subtype": "...", "type": "list|str" }},
-            "audio_url": {{ "dtype": "...", "subtype": "...", "type": "list|str" }}
-          }}
-        }},
-        "output": {{
-          "fields": {{
-            "answer": {{ "dtype": "text", "subtype": "...", "type": "str"}}
-          }}
-        }}
-      }},
-      "keywords": ["..."]
-    }}
-  ]
-}}
-
-Strict rules:
-- propose 1-3 subtasks
-- make the subtasks jointly strong candidates for the user goal
-- ensure every subtask directly covers the user's core requested capability
-- keep differences mainly in extra abilities and concrete implementation conditions
-- avoid redundancy
-- prefer choice-style answers when appropriate
-- keep input/output simple: input is question plus optional context/modality URL; output is only answer
-- return valid JSON only
-- return ONLY the JSON object with key "subtasks"
+Return only one valid JSON object with key subtasks. The following shows a minimal text-task structure; adapt the values and add allowed input fields only as needed:
+{{"subtasks":[{{"id":"st_01","name":"<capability-focused name>","description":"<tested capability and meaningful distinction>","answer_type":"choice","modalities":["text"],"sample_schema":{{"input":{{"fields":{{"question":{{"dtype":"text","subtype":"question","type":"str"}}}}}},"output":{{"fields":{{"answer":{{"dtype":"text","subtype":"multiple_choice","type":"str"}}}}}}}},"keywords":["<cue 1>","<cue 2>","<cue 3>"]}}]}}
 """
 
 SCOPE_PROMPT_TEMPLATE = r"""
@@ -267,7 +98,9 @@ def _normalize_field_spec(fs: Any) -> Dict[str, Any]:
     if out["dtype"] not in ("audio", "text", "image"):
         # keep empty; do not invent
         out["dtype"] = out["dtype"] or ""
-    if out["type"] not in ("str", "list"):
+    if out["dtype"] in ("image", "audio"):
+        out["type"] = "str|list"
+    elif out["type"] not in ("str", "list"):
         out["type"] = "str"
     out["subtype"] = out["subtype"] or ""
     return out
@@ -358,6 +191,34 @@ def _normalize_subtask(st: Dict[str, Any]) -> Dict[str, Any]:
 
     return st
 
+def _assign_subtask_ids(
+    subtasks: List[Dict[str, Any]],
+    existing_working_subtasks: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Number additions deterministically while keeping explicit replacements stable."""
+    existing_ids = {
+        str(st.get("id") or "").strip()
+        for st in (existing_working_subtasks or [])
+    }
+    numbers = [int(match.group(1)) for sid in existing_ids
+               if (match := re.fullmatch(r"st_(\d{2,})", sid))]
+    next_number = max(numbers, default=0) + 1
+    assigned, seen = [], set()
+    for subtask in subtasks:
+        st = dict(subtask)
+        sid = st["id"]
+        if sid in existing_ids:
+            if sid in seen:
+                raise ValueError(f"Duplicate replacement subtask ID: {sid}")
+        else:
+            sid = f"st_{next_number:02d}"
+            next_number += 1
+        st["id"] = sid
+        seen.add(sid)
+        assigned.append(st)
+    return assigned
+
+
 def plan_benchmark_scope(
     task_id: str,
     description: str,
@@ -365,6 +226,7 @@ def plan_benchmark_scope(
     model: Optional[str] = None,
     temperature: float = 0.2,
     max_tokens: int = 1500,
+    model_config_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Plan benchmark-level scope only: short_topic, modalities, keywords.
@@ -377,6 +239,7 @@ def plan_benchmark_scope(
         system_prompt="",
         user_prompt=user_prompt,
         model=model or None,
+        model_config_path=model_config_path,
         temperature=temperature,
         max_tokens=max_tokens,
     )
@@ -406,6 +269,7 @@ def parse_topic_to_subtasks(
     short_topic: Optional[str] = None,
     proposal_guidance: Optional[str] = None,
     existing_working_subtasks: Optional[List[Dict[str, str]]] = None,
+    model_config_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Decompose user requirement into subtasks. When modalities/keywords/short_topic are provided
@@ -437,6 +301,7 @@ def parse_topic_to_subtasks(
         system_prompt="",
         user_prompt=user_prompt,
         model=model or None,
+        model_config_path=model_config_path,
         temperature=temperature,
         max_tokens=max_tokens,
     )
@@ -464,7 +329,9 @@ def parse_topic_to_subtasks(
     else:
         data["keywords"] = _as_list_str(data.get("keywords"))
 
-    data["subtasks"] = [_normalize_subtask(st) for st in data["subtasks"]]
     # Keep proposer output compact and aligned with prompt contract.
-    data["subtasks"] = data["subtasks"][:3]
+    data["subtasks"] = _assign_subtask_ids(
+        [_normalize_subtask(st) for st in data["subtasks"][:3]],
+        existing_working_subtasks,
+    )
     return data

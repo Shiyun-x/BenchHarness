@@ -117,7 +117,7 @@ def _build_spec_text2speech(tool_cfg: Dict[str, Any]) -> PureToolSpec:
         "dialog": {
         "type": "list",
         "required": True,
-        "description": "Ordered list of dialog turns. IMPORTANT: each item MUST correspond to exactly ONE language.",
+        "description": "Ordered spoken turns with stable speaker IDs. The batch backend synthesizes segments and assembles a complete sequential audio file.",
         "item_schema": {
             "type": "object",
             "properties": {
@@ -125,12 +125,12 @@ def _build_spec_text2speech(tool_cfg: Dict[str, Any]) -> PureToolSpec:
                     "type": "string",
                     "required": True,
                     "description": (
-                        "Utterance content. MUST be in a single dominant language. "
+                        "Utterance content for one speaker. "
                         "Must be natural language, which is considered as valid human utterances."
                         "DO NOT include any unnecessary characters like [laughs], [good], etc."
                         "DO NOT include structure text like speaker ID."
-                        "If a speaker talks in multiple languages, SPLIT into multiple items."
-                        "MUST be less than 200 characters, if exceeds, split into multiple items but keep the same speaker."
+                        "Use a language code or auto for multilingual speech. "
+                        "For MiniMax, each turn must be less than 10000 characters; split longer text while keeping the same speaker."
                     ),
                 },
                 "speaker": {
@@ -145,13 +145,13 @@ def _build_spec_text2speech(tool_cfg: Dict[str, Any]) -> PureToolSpec:
                     "type": "string",
                     "required": False,
                     "description": (
-                        "Language code for THIS item only, only supported language codes in ['en', 'es', 'fr', 'de', 'it', 'pt', 'pl', 'tr', 'ru', 'nl', 'cs', 'ar', 'zh-cn', 'hu', 'ko', 'ja', 'hi']. "
+                        "Language code for this turn (e.g. en, zh-cn, auto); delivery validates support for the selected backend. "
                     ),
                 },
                 "gender": {
                     "type": "string",
                     "required": False,
-                    "enum": ["male", "female"],
+                    "enum": ["male", "female", "auto"],
                     "description": "Preferred voice gender if supported.",
                 },
             },
@@ -160,12 +160,29 @@ def _build_spec_text2speech(tool_cfg: Dict[str, Any]) -> PureToolSpec:
 
     }
 
-    # Return schema: single merged audio file path only
+    param_schema['dialog']['item_schema']['properties'].update({
+        'id': {'type': 'string', 'required': False,
+               'description': 'Unique safe segment ID, e.g. turn_1; use IDs for overlay references.'},
+        'speed': {'type': 'number', 'required': False, 'description': 'Speech rate, 0.9-1.8 (inclusive).'},
+        'vol': {'type': 'number', 'required': False, 'description': 'Volume, 0.01-10.'},
+        'pitch': {'type': 'integer', 'required': False, 'description': 'Pitch, -12..12.'},
+        'pause_after_ms': {'type': 'integer', 'required': False,
+                           'description': 'Pause after this turn, 0-3600000 ms; default 150/300 ms by speaker.'},
+    })
+
+    properties = param_schema['dialog']['item_schema']['properties']
+    properties.pop('speaker')
+    properties['id']['required'] = True
+    properties['label'] = {'type': 'string', 'required': True,
+                           'description': 'Person identity for stable voice mapping within this item; no target role.'}
+    param_schema = {'segments': {'type': 'list', 'required': True,
+                    'description': params_doc.get('segments', 'Speech segments with id, label and text.'),
+                    'item_schema': {'type': 'object', 'properties': properties}}}
+
+    # New calls reserve independent segments; composition is a separate tool.
     return_schema = {
-        "merged_audio_path": {
-            "type": "string",
-            "description": "Real system path to single audio file for the whole dialog concatenated in order."
-        }
+        'segments': {'type': 'list', 'description': 'Reusable {id, label, audio_path} segments; files pending until batch TTS.'},
+        'status': {'type': 'string', 'description': 'pending: only script and paths are scheduled.'},
     }
 
     spec = PureToolSpec(
@@ -183,6 +200,56 @@ def _build_spec_text2speech(tool_cfg: Dict[str, Any]) -> PureToolSpec:
         raw_cfg=tool_cfg,
     )
     return spec
+
+def _build_spec_overlay_audio(tool_cfg: Dict[str, Any]) -> PureToolSpec:
+    from tools.executor_tools.implementations.audio_tools import overlay_audio
+    docs = {key: str(value) for param in tool_cfg.get('params', []) for key, value in param.items()}
+    io = tool_cfg.get('io') or {}
+    return PureToolSpec(
+        name='overlay_audio', category=tool_cfg.get('category', ''),
+        description=tool_cfg.get('description', ''), io_inputs=list(io.get('inputs', [])),
+        io_outputs=list(io.get('outputs', [])), behavior=list(tool_cfg.get('behavior', [])),
+        params_doc=docs, typical_uses=list(tool_cfg.get('typical_uses', [])),
+        param_schema={
+            'segments': {'type': 'list', 'required': True, 'description': docs.get('segments', ''),
+                         'item_schema': {'type': 'object', 'properties': {
+                             'id': {'type': 'string', 'required': True},
+                              'label': {'type': 'string', 'required': False},
+                             'audio_path': {'type': 'string', 'required': True},
+                             'pause_after_ms': {'type': 'integer', 'required': False}}}},
+            'outputs': {'type': 'list', 'required': True, 'description': docs.get('outputs', ''),
+                       'item_schema': {'type': 'object', 'properties': {
+                            'id': {'type': 'string', 'required': True},
+                            'tracks': {'type': 'list', 'required': True},
+                            'noise': {'type': 'object', 'required': False,
+                                      'description': 'Optional final noise, only when add_environmental_noise is enabled.'},
+                            'background_music': {'type': 'object', 'required': False,
+                                      'description': 'English vocal song: intensity OR speech_to_music_db; requires add_background_music.'}}}}},
+        return_schema={'status': {'type': 'string', 'description': 'pending until delivery'},
+                       'outputs': {'type': 'list', 'description': 'Named outputs with scheduled paths and tracks.'}},
+        backend=overlay_audio, raw_cfg=tool_cfg)
+
+
+def _build_spec_add_background_music(tool_cfg: Dict[str, Any]) -> PureToolSpec:
+    from tools.executor_tools.implementations.audio_tools import add_background_music
+    docs = {key: str(value) for param in tool_cfg.get('params', []) for key, value in param.items()}
+    io = tool_cfg.get('io') or {}
+    return PureToolSpec(
+        name='add_background_music', category=tool_cfg.get('category', ''),
+        description=tool_cfg.get('description', ''), io_inputs=list(io.get('inputs', [])),
+        io_outputs=list(io.get('outputs', [])), behavior=list(tool_cfg.get('behavior', [])),
+        params_doc=docs, typical_uses=list(tool_cfg.get('typical_uses', [])),
+        param_schema={
+            'audio_path': {'type': 'string', 'required': True, 'description': docs.get('audio_path', '')},
+            'intensity': {'type': 'string', 'required': False, 'enum': ['low', 'medium', 'high'],
+                          'description': docs.get('intensity', '')},
+            'speech_to_music_db': {'type': 'number', 'required': False,
+                                  'default': 0, 'minimum': -5, 'maximum': 0,
+                                  'description': docs.get('speech_to_music_db', '')}},
+        return_schema={'music_audio_path': {'type': 'string', 'description': 'Reserved final audio path.'},
+                       'status': {'type': 'string', 'description': 'pending; no audio rendered during generation'}},
+        backend=add_background_music, raw_cfg=tool_cfg)
+
 
 def _build_spec_add_environmental_noise(tool_cfg: Dict[str, Any]) -> PureToolSpec:
     from tools.executor_tools.implementations.audio_tools import add_environmental_noise
@@ -358,6 +425,10 @@ def _build_spec_web_search(tool_cfg: Dict[str, Any]) -> PureToolSpec:
 
     return_schema = {
         "answer": {"type": "string", "description": "Search-grounded answer text."},
+        "status": {"type": "string", "description": "supported/partial/insufficient/conflicting"},
+        "claims": {"type": "list", "description": "Facts with checked page excerpts and source_ids."},
+        "sources": {"type": "list", "description": "Actual provider-cited pages and retrieval metadata."},
+        "insufficient_info": {"type": "bool", "description": "Whether evidence is insufficient or conflicting."},
     }
 
     spec = PureToolSpec(
@@ -422,12 +493,16 @@ def build_pure_tool_registry(tools_cfg: Dict[str, Any]) -> Dict[str, PureToolSpe
         name = t.get("name")
         if name == "text2speech":
             spec = _build_spec_text2speech(t)
+        elif name == 'overlay_audio':
+            spec = _build_spec_overlay_audio(t)
         elif name == "translate":
             spec = _build_spec_translate(t)
         elif name == "web_search":
             spec = _build_spec_web_search(t)
         elif name == "add_environmental_noise":
             spec = _build_spec_add_environmental_noise(t)
+        elif name == 'add_background_music':
+            spec = _build_spec_add_background_music(t)
         elif name == "cleanup_interim_fields":
             spec = _build_spec_cleanup_interim_fields(t)
         else:
@@ -442,7 +517,7 @@ def _llm_plan_pure_call(
     resources: Dict[str, Any],
     step: Dict[str, Any],
     tool_spec: Dict[str, Any],
-    model: str = "gpt-5.1",
+    model: str = "gpt-6.1-sol",
 ) -> Dict[str, Any]:
 
     # Defensive: this should ALWAYS be a dict built from PureToolSpec.
@@ -673,15 +748,17 @@ def run_pure_step(
         k for k in required_keys
         if (not isinstance(tool_args, dict)) or (k not in tool_args) or _is_effectively_empty(tool_args.get(k))
     ]
+    if step_name == 'text2speech' and isinstance(tool_args, dict) and tool_args.get('dialog'):
+        missing_required = [key for key in missing_required if key != 'segments']
 
     if missing_required:
-        if step_name == "text2speech" and "dialog" in missing_required:
+        if step_name == "text2speech" and "segments" in missing_required:
             return (
                 False,
                 {},
-                "pure_tool_missing_required_args[text2speech]: ['dialog']. "
-                "Planner did not provide required tool_args.dialog. "
-                "Fix Stage1 planning: create a structured dialog list (e.g., interim.dialog/turn_list/dialogue_turns) "
+                "pure_tool_missing_required_args[text2speech]: ['segments']. "
+                "Planner did not provide required tool_args.segments (id, label, text). "
+                "Prepare speech segments "
                 "and include that field in step.resource_fields so the pure-tool planner can use it.",
                 {},
             )
@@ -710,6 +787,12 @@ def run_pure_step(
     additional_messages: Dict[str, Any] = {}
     if step_name != "cleanup_interim_fields":
         additional_messages[f"{tool_name}_tool_args"] = tool_args
+        if tool_name == 'text2speech' and 'segments' in tool_args:
+            additional_messages[f'{tool_name}_tool_args'] = {
+                **tool_args, 'segment_paths': result.get('segments', [])}
+        elif tool_name == 'overlay_audio' and 'outputs' in tool_args:
+            additional_messages[f'{tool_name}_tool_args'] = {
+                **tool_args, 'outputs': result.get('outputs', [])}
         if tool_name == "web_search" or step_name == "web_search":
             additional_messages["web_search_result"] = result
         memory_record = _build_tool_memory_record(

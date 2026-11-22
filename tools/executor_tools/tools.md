@@ -31,13 +31,19 @@ To add your own tool: implement it in the appropriate `*_tools.py` file, then ad
 | Function | Description |
 |---|---|
 | `text2speech` | Synthesize speech from text (TTS) |
+| `overlay_audio` | Overlay retained speech segments on a timeline, preserving full utterances |
 | `speech2text` | Transcribe audio to text (ASR) |
 | `add_environmental_noise` | Mix environmental noise into an audio clip at a given SNR |
+| `add_background_music` | Schedule English vocal music as background interference; render after speech assembly |
 | `merge_dialog` | Concatenate a list of dialog audio segments into one clip |
 
 ### Deferred audio generation
 
-During benchmark generation, **`text2speech` and `add_environmental_noise` do not synthesize audio**. Instead they record their call parameters (dialog script, noise type/intensity) into the sample's `_pure_tool_messages`. This keeps the pipeline fast and avoids requiring a GPU or noise library at generation time.
+During benchmark generation, **`text2speech`, `add_environmental_noise` and `add_background_music` do not synthesize audio**. Instead they record their call parameters (speech script and background settings) into the sample's `_pure_tool_messages`. This keeps the pipeline fast and avoids requiring a GPU or audio library at generation time.
+
+`overlay_audio` is also deferred: Generator writes `kind: tts` with `segments` (`id`, `label`, `text`), then optionally `kind: overlay_audio` with named `outputs` selecting segment IDs. A label only identifies a person for consistent voices. Standalone segments can be referenced directly, and composition can select/reuse subsets for several independent outputs. Audio schema fields use `str|list`; `media:audio:<segment-or-output-id>` is replaced by a runtime-assigned path. Environmental noise is a separate final step on selected assembled outputs. Legacy dialog/tracks jobs keep their old sequential behavior.
+
+For MiniMax, use `python synthesize_audio.py --input-cache-dir <query-cache>` or `python -m utils.audio_processing.minimax_batch --eval-json <manifest>`, with `--dry-run` to inspect requests without API calls. Both default to the shared `utils/resources/minimax_voices.json`; `--config` overrides it. MiniMax credentials and voice mappings are delivery configuration, not generated script. See the [shared parameters and voice catalogs](../../utils/resources/minimax_audio.md) and [example config](../../utils/resources/minimax_config.example.json). An independent mixer is available as `python -m utils.audio_processing.overlay_batch --eval-json <manifest>`.
 
 After the pipeline finishes, use the two batch scripts in `utils/audio_processing/` to perform the actual audio synthesis:
 
@@ -64,6 +70,48 @@ python utils/audio_processing/add_noise.py \
 Audio file paths (`_tts_output_path`, `_final_audio_path`) are determined at benchmark generation time by the stubs and recorded in the JSON. The batch scripts write to those exact paths.
 
 ---
+
+## Vocal background music
+
+The two layers follow the existing deferred audio tools:
+
+- Agent description: `utils/resources/tools.yaml`; structured spec: `run_pure_tools.py`.
+- Deferred interface: `implementations/audio_tools.py::add_background_music`. It reserves a path and returns `status: pending`, without accessing the music library or creating audio.
+- Actual renderer and standalone/batch CLI: `utils/audio_processing/add_music.py`.
+
+Enable `add_background_music` alongside `text2speech` and `overlay_audio`, then put
+`background_music: {"intensity":"medium"}` on selected named outputs. Alternatively
+use `background_music: {"speech_to_music_db":0}`. Only one level parameter is allowed.
+The speech-to-music ratio ranges from -5 to 0 dB and defaults to 0 dB. The
+low/medium/high settings correspond to 0/-2.5/-5 dB; negative values make the
+song louder than active foreground speech. The measurement includes accompaniment;
+it is not a separated vocal ratio.
+
+The backend selects English lyric-bearing windows, repeats with crossfades if
+necessary, preserves the foreground duration/rate/channels, and applies no ducking.
+It uses one float mix and one peak attenuation for music and optional TUT noise.
+It writes `<output>.music.json` with the source, seed, window, gain and source hashes;
+delivery receipts also detect changed music or metadata files. Selection is seeded
+per item/output; changing intensity reuses the same speech and song window.
+
+The library defaults to `../datasets/data/JamendoLyrics` relative to the repository.
+Override it with `MUSIC_ROOT` or `--music-root`. It must contain the downloaded
+`metadata.jsonl` and its referenced audio. MP3 decoding uses `soundfile`/libsndfile
+with MPEG support; outputs use the existing WAV/FLAC writer.
+
+```bash
+# One existing speech recording; no API calls
+python -m utils.audio_processing.add_music --audio-path speech.wav --output-path speech_music.wav --intensity medium
+
+# Independent pass after TTS/assembly
+python -m utils.audio_processing.add_music --eval-json evaluation_with_audio_settings.json
+
+# Integrated delivery; --dry-run also checks the music library without API calls
+python synthesize_audio.py --input-cache-dir cache/user_queries/user_query_XX --music-root /path/to/JamendoLyrics
+```
+
+Music can coexist with `noise` when both tools are enabled. The music pass then
+renders both backgrounds; the separate noise pass skips these outputs.
 
 ## Adding a Custom Tool
 
@@ -119,7 +167,7 @@ The function must return a plain `dict`. If it produces a file (audio, image), i
 
 **Step 2: Register it in `utils/resources/tools.yaml`**:
 
-Key fields to set: `name`, `modalities` (controls which task types the agent may select this tool for), `description`, `params`, and `typical_uses`. See the existing entries in the file for the full schema including `memory.retain` (which inputs/outputs to log in the sample record).
+Key fields to set: `name`, `modalities` (controls which task types the agent may select this tool for), `description`, `params`, and `typical_uses`. See the existing entries for `category`, `io`, and `behavior`. The unused legacy `memory` configuration is omitted; scripts and artifacts are retained by the executor and media export code.
 
 **Step 3: Wire up the backend in `tools/executor_tools/run_pure_tools.py`**:
 

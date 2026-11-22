@@ -309,7 +309,7 @@ def apply_image_degradation(
 def image2text(
     image_paths: Union[ImagePath, List[ImagePath]],
     prompt: str,
-    model: str = "gpt-5.1",
+    model: str = "gpt-6.1-sol",
     max_tokens: int = 512,
 ) -> Union[str, List[str]]:
     """

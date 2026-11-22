@@ -141,10 +141,14 @@ HEAVY_MODALITIES: Set[str] = {"audio", "image"}
 def is_modality_compatible(subtask: Dict[str, Any], card: "DatasetCard") -> bool:
 
     sub_mods = _normalize_modalities(subtask.get("modalities") or [])
-    io_schemas = card.io_schemas[0]
-    
-    in_mods = _normalize_modalities(io_schemas.get("in") or io_schemas.get("in_"))
-    out_mods = _normalize_modalities(io_schemas.get("out") or io_schemas.get("out_"))
+    schemas = getattr(card, "io_schemas", None) or []
+    in_mods, out_mods = set(), set()
+    for schema in schemas:
+        if hasattr(schema, "model_dump"):
+            schema = schema.model_dump(by_alias=True)
+        if isinstance(schema, dict):
+            in_mods |= _normalize_modalities(schema.get("in") or schema.get("in_"))
+            out_mods |= _normalize_modalities(schema.get("out") or schema.get("out_"))
     
     modalities = _normalize_modalities(getattr(card, "modalities", []) or [])
     ds_mods = modalities | in_mods | out_mods
@@ -314,15 +318,21 @@ def soft_native_match(fields: Dict[str, Any]) -> float:
 
 def soft_meta_match(fields: Dict[str, Any], pref: Dict[str, Any]) -> float:
     """
-    Soft-score meta fields using LLM preferred_roles.
-    Matching roles add points; missing roles are not penalized.
+    Bounded weighted role coverage, used as a soft boost, never a filter.
     """
-    score = 0.0
-    roles = set(fields.keys())
+    score, total = 0.0, 0.0
     for role, cfg in (pref.get("preferred_roles") or {}).items():
-        if role in roles:
-            score += float(cfg.get("weight", 0.5))
-    return score
+        if not isinstance(cfg, dict):
+            continue
+        try:
+            weight = float(cfg.get("weight", 0.5))
+        except (TypeError, ValueError):
+            weight = 0.5
+        weight = min(1.0, max(0.0, weight)) if math.isfinite(weight) else 0.5
+        total += weight
+        if role in fields:
+            score += weight
+    return score / total if total else 0.0
 
 def build_meta_query(pref: Dict[str, Any]) -> str:
     """
@@ -369,7 +379,7 @@ def retrieve_candidates(
     subtask: Dict[str, Any],
     dataset_cards_json: List[Any],          # DatasetCard
     pref: Dict[str, Any],
-    top_k: int = 8,
+    top_k: int = 10,
     method: str = "hybrid",            # "bm25" | "tfidf" | "hybrid"
     alpha: float = 0.6,                # BM25 weight when method is hybrid
 ) -> List[Dict[str, Any]]:
@@ -391,7 +401,11 @@ def retrieve_candidates(
     ]
     """
 
-    if not dataset_cards_json:
+    if method not in ("bm25", "tfidf", "hybrid"):
+        raise ValueError(f"Unknown retrieval method: {method}")
+    if not 0 <= alpha <= 1:
+        raise ValueError("alpha must be in [0, 1]")
+    if not dataset_cards_json or top_k <= 0:
         return []
     dataset_cards: List[DatasetCard] = []
     for card_json in dataset_cards_json:
@@ -431,7 +445,8 @@ def retrieve_candidates(
     native_q_tokens = tokenize(native_q_text)
 
 
-    meta_q_text = build_meta_query(pref)
+    # The capability provides a useful fallback if a legacy preference is empty.
+    meta_q_text = build_meta_query(pref) or native_q_text
     meta_q_tokens = tokenize(meta_q_text)
 
     # 3) calculate native_sem & meta_sem (each view has its own hybrid combination)
@@ -509,9 +524,31 @@ def retrieve_candidates(
         })
 
 
-    # 5) sort & take top_k (no strong threshold filtering, ensure recall)
-    results.sort(key=lambda x: x["final_score"], reverse=True)
-    return results[:top_k]
+    # Take up to 4 native and 6 material candidates; overlap stays overlap.
+    return _merge_retrieval_views(results, top_k)
+
+
+def _merge_retrieval_views(results: List[Dict[str, Any]], top_k: int = 10) -> List[Dict[str, Any]]:
+    """Union native top 4 and material top 6 without filling deduplication gaps.
+
+    top_k is an optional final cap; it never expands either route's shortlist.
+    """
+    if top_k <= 0:
+        return []
+    native = sorted(results, key=lambda r: (-r["native_score"], -r["final_score"], r["dataset_id"]))
+    material = sorted(results, key=lambda r: (-r["meta_score"], -r["final_score"], r["dataset_id"]))
+    selected = {}
+
+    def add(row, route):
+        item = selected.setdefault(row["dataset_id"], {**row, "retrieval_routes": []})
+        if route not in item["retrieval_routes"]:
+            item["retrieval_routes"].append(route)
+
+    for row in native[:4]:
+        add(row, "native")
+    for row in material[:6]:
+        add(row, "material")
+    return sorted(selected.values(), key=lambda r: (-r["final_score"], r["dataset_id"]))[:top_k]
 
 from tools.planner_tools.grounding.dataset_preference_tools import plan_dataset_preference
 @register_tool("initial_dataset_retrieve")

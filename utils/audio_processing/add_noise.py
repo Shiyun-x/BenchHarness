@@ -10,6 +10,7 @@ and writes the noisy wav to the path stored in _final_audio_path.
 """
 
 from functools import lru_cache
+from array import array
 from pydub import AudioSegment
 from typing import Dict, List, Tuple, Any, Optional
 from pathlib import Path
@@ -17,12 +18,19 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
 import json
 import argparse
+import sys
 from tqdm import tqdm
+
+if __package__ in (None, ''):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from utils.audio_processing.audio_rendering import read_audio, write_audio
+from utils.audio_processing.library_paths import DEFAULT_NOISE_ROOT, resolve_noise_root
 
 
 # ============ Configuration ============
 
-NOISE_ROOT = r"/data/noise_lib/TUT"
+NOISE_ROOT = str(DEFAULT_NOISE_ROOT)
 
 INTENSITY_TO_SNR: Dict[str, float] = {
     "low": 15.0,
@@ -91,14 +99,14 @@ def add_environmental_noise(
     output_path: str,
     noise_type: str,
     intensity: str = "medium",
-    noise_root: str = NOISE_ROOT,
+    noise_root: Optional[str] = None,
     seed: Optional[int] = None,
 ) -> Dict[str, Any]:
     audio_path = Path(str(audio_path))
     if not audio_path.exists():
         raise FileNotFoundError(f"audio not found: {audio_path}")
 
-    index = _load_tut_noise_index(noise_root)
+    index = _load_tut_noise_index(str(resolve_noise_root(noise_root)))
     if not noise_type or noise_type not in index:
         noise_type = random.choice(list(index.keys()))
 
@@ -109,8 +117,16 @@ def add_environmental_noise(
     rnd = random.Random(seed)
     noise_path = rnd.choice(noise_candidates)
 
-    clean = AudioSegment.from_file(audio_path)
-    noise = AudioSegment.from_file(noise_path)
+    if audio_path.suffix.lower() in ('.wav', '.flac'):
+        params, samples = read_audio(audio_path)
+        if sys.byteorder != 'little':
+            samples.byteswap()
+        clean = AudioSegment(samples.tobytes(), sample_width=params[2], frame_rate=params[0], channels=params[1])
+    else:
+        with audio_path.open('rb') as source:
+            clean = AudioSegment.from_file(source)
+    with noise_path.open('rb') as source:
+        noise = AudioSegment.from_file(source, format='wav' if noise_path.suffix.lower() == '.wav' else None)
     noise = _tile_or_trim(noise, target_ms=len(clean))
     mixed, actual_snr = _mix_with_snr(clean, noise, intensity=intensity)
 
@@ -119,7 +135,12 @@ def add_environmental_noise(
     if output_path.suffix == "":
         output_path = output_path.with_suffix(".wav")
 
-    mixed.export(output_path, format="wav")
+    mixed = mixed.set_sample_width(2)
+    samples = array('h')
+    samples.frombytes(mixed.raw_data)
+    if sys.byteorder != 'little':
+        samples.byteswap()
+    write_audio(output_path, (mixed.frame_rate, mixed.channels, 2), samples)
 
     return {
         "noisy_audio_path": str(output_path.resolve()),
@@ -148,6 +169,9 @@ def _process_item(item: Dict[str, Any], noise_root: str) -> Dict[str, Any]:
             intensity=item.get("intensity", "medium"),
             noise_root=noise_root,
         )
+        if item.get('record') is not None:
+            from utils.audio_processing.audio_receipts import write_receipt
+            write_receipt(item['record'], output_path)
         return {"status": "ok", "result": res, "item": item}
     except Exception as e:
         print(f"[ERROR] {audio_path}: {e}")
@@ -164,8 +188,8 @@ def main():
                         help="Path to evaluation JSON with _tts_output_path + _add_environmental_noise_args")
     parser.add_argument("--workers", type=int, default=4,
                         help="Number of worker threads (<=1 for sequential)")
-    parser.add_argument("--noise-root", type=str, default=NOISE_ROOT,
-                        help="Root dir of TUT dataset (must contain meta.txt)")
+    parser.add_argument("--noise-root", type=str,
+                        help="TUT library with meta.txt; defaults to NOISE_ROOT or ../datasets/data/TUT")
 
     args = parser.parse_args()
 
@@ -174,8 +198,18 @@ def main():
 
     items_to_process: List[Dict[str, Any]] = []
     for i, record in enumerate(records):
+        if '_speech_segments' in record:
+            for output in record.get('_audio_outputs', []):
+                if output.get('noise') and not output.get('background_music'):
+                    items_to_process.append({'record_idx': i, 'audio_path': output['output_path'],
+                        'output_path': output['final_audio_path'],
+                        'noise_type': output['noise']['noise_type'],
+                        'intensity': output['noise'].get('intensity', 'medium'), 'record': record})
+            continue
         noise_args = record.get("_add_environmental_noise_args") or {}
-        tts_path = record.get("_tts_output_path")
+        if record.get('_add_background_music_args'):
+            continue  # add_music handles the combined music/noise mix in one pass.
+        tts_path = record.get('_noise_input_path') or record.get("_tts_output_path")
         final_path = record.get("_final_audio_path")
         # Fall back: noisy output path stored in sample.input.audio_url
         if not final_path:
@@ -188,6 +222,7 @@ def main():
             "output_path": final_path,
             "noise_type": noise_args.get("noise_type", ""),
             "intensity": noise_args.get("intensity", "medium"),
+            "record": record,
         })
 
     if not items_to_process:

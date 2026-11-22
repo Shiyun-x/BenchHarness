@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import glob
 import hashlib
 import json
@@ -93,14 +94,17 @@ def _refill_idx_todo_for_replenishment(
         if not pairs:
             continue
         need_per_pair = (gap + len(pairs) - 1) // len(pairs)
+        remaining_gap = gap
         for pair in pairs:
+            if remaining_gap <= 0:
+                break
             did = str(pair.get("dataset_id") or "").strip()
             if not did:
                 continue
             pool = dataset_index_pool.get(did)
             if not isinstance(pool, list):
                 continue
-            take = min(need_per_pair, len(pool))
+            take = min(need_per_pair, len(pool), remaining_gap)
             if take <= 0:
                 continue
             add_idx = pool[:take]
@@ -110,6 +114,7 @@ def _refill_idx_todo_for_replenishment(
                 pair["idx_todo"] = []
             pair["idx_todo"].extend(add_idx)
             total_added += take
+            remaining_gap -= take
     return total_added
 
 
@@ -192,6 +197,7 @@ def build_generator_inputs(
             continue
 
         transformability = st.get("transformability") or {}
+        blueprints = st.get("grounding_blueprints") or {}
 
         for did_raw, need_raw in alloc_map.items():
             did = str(did_raw or "").strip()
@@ -206,6 +212,8 @@ def build_generator_inputs(
                 continue
 
             tp = transformability.get(did) or {}
+            if isinstance(blueprints.get(did), dict):
+                tp = blueprints[did]
             tool_plan = (tp.get("plan") or []) if isinstance(tp, dict) else []
 
             # Guard against duplicate (stid,did) by merging (shouldn't happen, but safe)
@@ -219,6 +227,8 @@ def build_generator_inputs(
                     "tool_plan": tool_plan,
                     "idx_todo": [],  # filled later by per-dataset slicing
                 }
+                if isinstance(tp, dict) and isinstance(tp.get("blueprint"), dict):
+                    pair["blueprint"] = tp["blueprint"]
                 pair_entry_map[key] = pair
                 execution_pairs.append(pair)
             else:
@@ -291,7 +301,7 @@ def build_generator_inputs(
 
 
 def _load_transformation_tools(ctx: dict, path: str) -> List[Dict[str, Any]]:
-    """Load and filter transformation tools from a YAML file by the active modalities in ctx."""
+    """Load modality-relevant asset tools; native proposal search is separate."""
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict) or "tools" not in data:
@@ -302,5 +312,26 @@ def _load_transformation_tools(ctx: dict, path: str) -> List[Dict[str, Any]]:
     modalities = ctx.get("modalities", []) or []
     return [
         tool for tool in tools
-        if any(m in modalities for m in (tool.get("modalities") or []))
+        if tool.get("name") != "web_search"
+        and any(m in modalities for m in (tool.get("modalities") or []))
     ]
+
+
+def attach_grounding_blueprints(generator_input: dict, subtasks: list) -> dict:
+    """Refresh advice on cached/manual todos without resampling any index."""
+    result = copy.deepcopy(generator_input)
+    by_id = {str(task['id']): task for task in subtasks if task.get('grounding')}
+    for sid, pairs in (result.get('pairs_by_subtask') or {}).items():
+        task = by_id.get(str(sid))
+        if not task:
+            continue
+        selected = {source['dataset_id'] for source in task['grounding'].get('sources', [])}
+        for pair in pairs:
+            did = str(pair.get('dataset_id') or '')
+            packet = (task.get('grounding_blueprints') or {}).get(did)
+            if did not in selected or not isinstance(packet, dict) or not isinstance(packet.get('blueprint'), dict):
+                raise ValueError(f'Cached generator todo {sid}/{did} is outside the current Grounding selection. '
+                                 'Recompute build_generator_inputs; no sampled index was changed.')
+            pair['blueprint'] = copy.deepcopy(packet['blueprint'])
+            pair['tool_plan'] = []
+    return result

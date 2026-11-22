@@ -8,7 +8,7 @@ from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent
 
-from utils.benchmark_flow import FlowModule, ToolModule, AgentModule, _load_agent_context_output_keys, _make_postprocess_fn
+from utils.benchmark_flow import FlowModule, ToolModule, AgentModule, _load_agent_context_output_keys, _make_postprocess_fn, _select_grounding_cache_mode
 from utils.constant import CONTEXT_KEYS_EXCLUDED_FROM_CACHE
 from utils.logger import MetaChainLogger
 from utils.schema.metadata_core import TopicMetadata
@@ -27,18 +27,20 @@ from tools.shared.build_gen_input import (
     _compute_gap_per_subtask,
     _refill_idx_todo_for_replenishment,
     _load_transformation_tools,
+    attach_grounding_blueprints,
 )
 
 # agents
-from benchmark_agent.planner.design_agent import get_design_agent
-from benchmark_agent.planner.grounding_agent import get_grounding_agent
-from benchmark_agent.planner.allocation_agent import get_allocation_agent
-from benchmark_agent.executor.sample_realization import (
+from benchHarness.planner.design_agent import get_design_agent
+from benchHarness.planner.grounding_agent import get_legacy_grounding_agent
+from benchHarness.planner.grounding_runtime import AdaptiveGroundingModule
+from benchHarness.planner.allocation_agent import get_allocation_agent
+from benchHarness.executor.sample_realization import (
     _save_transform_cache,
     _load_transformed_buffer_from_file,
     iterative_transform_batch,
 )
-from benchmark_agent.executor.verification import verify_one_subtask
+from benchHarness.executor.verification import verify_one_subtask
 from tools.shared.export_results import export_evaluation
 
 # model config
@@ -54,8 +56,8 @@ from utils.model_config import (
 # Constants
 # ---------------------------------------------------------------------------
 DEFAULT_TOPIC_ID = "topic_01"
-DEFAULT_MAX_WORKERS_TRANSFORM = 24
-DEFAULT_MAX_VERIFY_REPLENISH_ROUNDS = 2
+DEFAULT_MAX_WORKERS_TRANSFORM = 20
+DEFAULT_MAX_VERIFY_REPLENISH_ROUNDS = 1
 DEFAULT_MAX_DESIGN_GROUNDING_ROUNDS = 4
 CACHE_FNAME_VERIFIED_BUFFER = "verify_log/verified_transformed_buffer_{subtask_id}.json"
 
@@ -105,9 +107,12 @@ class BenchmarkFlow(FlowModule):
             context_output_keys=_output_keys(design_agent),
             postprocess_fn=_make_postprocess_fn("design", "design"),
         )
-        grounding_agent = get_grounding_agent(model=get_grounding_model(model_config_path))
-        self.grounding_agent = AgentModule(
-            grounding_agent, self.client, cache_path,
+        self.grounding_agent = AdaptiveGroundingModule(
+            cache_path, model=get_grounding_model(model_config_path), model_config_path=model_config_path,
+            logger=getattr(self.client, 'logger', None), cache_selector=_select_grounding_cache_mode)
+        grounding_agent = get_legacy_grounding_agent(model=get_grounding_model(model_config_path))
+        self.legacy_grounding_agent = AgentModule(
+            grounding_agent, self.client, os.path.join(cache_path, "legacy_grounding"),
             exclude_context_keys_from_cache=CONTEXT_KEYS_EXCLUDED_FROM_CACHE,
             context_output_keys=_output_keys(grounding_agent),
             postprocess_fn=_make_postprocess_fn("grounding", "grounding"),
@@ -154,26 +159,31 @@ class BenchmarkFlow(FlowModule):
         context_variables: Dict[str, Any],
         force_recompute: bool = False,
     ) -> bool:
-        """Run Grounding Agent. Returns True if accepted, False if rejected."""
+        """Run independent adaptive agents, or the explicit legacy compatibility path."""
         messages = [{
             "role": "user",
             "content": (
-                "Validate each subtask against the dataset pool and transformations. "
-                "Call preference_construction() once; then for each subtask with need_dataset_search call dataset_search(subtask_id) and select_candidates_for_subtask(subtask_id, ids) until all reach need_transformability; then transformability_assessment() and score_and_filter() once each (no args). "
-                "If every subtask has at least one valid (dataset, plan), call case_resolved(accepted=True, summary=...). "
-                "Otherwise call case_resolved(accepted=False, reason=..., feedback_to_design=...)."
+                "Find promising sources for the assigned targets. Inspect candidates as needed, "
+                "obtain brief dataset-level blueprints and submit the selected sources."
             )
         }]
-        _, context_variables = await self.grounding_agent(
+        runner = self.grounding_agent
+        if context_variables.get("generation_mode") == "legacy":
+            runner = self.legacy_grounding_agent
+            for task in context_variables.get("subtasks", []):
+                task.pop("grounding", None)
+                task.pop("grounding_blueprints", None)
+        _, context_variables = await runner(
             messages,
             context_variables,
             force_recompute=force_recompute,
         )
         result = context_variables.get("grounding_result") or {}
+        metadata.subtasks = context_variables.get("subtasks", metadata.subtasks)
         status = result.get("status", "")
         if status == "accepted":
             return True
-        if status == "rejected":
+        if status in ("rejected", "incomplete"):
             context_variables["grounding_feedback"] = result.get("feedback_to_design") or result.get("reason", "")
             return False
         # Defensive fallback: unexpected status treated as rejected so retry logic can stop gracefully.
@@ -196,10 +206,15 @@ class BenchmarkFlow(FlowModule):
             "role": "user",
             "content": "Please allocate dataset samples across subtasks."
         }]
+        cache_name = None
+        if (context_variables.get("grounding_result") or {}).get("version") == "adaptive-v1":
+            from tools.planner_tools.grounding.grounding_materials import digest
+            cache_name = "adaptive-v1/" + digest(context_variables.get("allocation_config") or {})[:20]
         _, context_variables = await self.allocation_agent(
             messages,
             context_variables,
             force_recompute=force_recompute,
+            cache_name=cache_name,
         )
         last_alloc = context_variables.get("last_allocation", {})
         context_variables["allocation"] = {
@@ -223,10 +238,116 @@ class BenchmarkFlow(FlowModule):
         **kwargs: Any,
     ) -> TopicMetadata:
         """Execute transform batch for all subtasks, then verify (single pass in testing mode)."""
-        subtask_order = context_variables["subtask_order"]
+        subtask_order = list(context_variables["subtask_order"])
+        requested_subtask = kwargs.get('generation_subtask')
+        if requested_subtask:
+            if requested_subtask not in subtask_order:
+                raise ValueError(f'Unknown or unallocated generation subtask: {requested_subtask}. '
+                                 f'Available: {subtask_order}')
+            subtask_order = [requested_subtask]
+            context_variables = {**context_variables, 'subtask_order': subtask_order}
+            print(f'[BenchmarkFlow] Generation limited to {requested_subtask}; other subtasks are skipped.')
         max_workers = int(kwargs.get("max_workers_transform", DEFAULT_MAX_WORKERS_TRANSFORM))
         max_replenish_rounds = int(kwargs.get("max_verify_replenish_rounds", DEFAULT_MAX_VERIFY_REPLENISH_ROUNDS))
+        soft_minimum = kwargs.get('min_accepted_samples')
+        if self.model_config_path:
+            policy_path = Path(self.model_config_path).resolve().parent/'generation_policy.json'
+            if policy_path.is_file():
+                policy = json.loads(policy_path.read_text(encoding='utf-8-sig'))
+                if policy.get('executor_argument_repair'):
+                    context_variables['executor_argument_repair'] = copy.deepcopy(policy['executor_argument_repair'])
+                max_workers = int(policy.get('executor_workers', max_workers))
+                if max_workers < 1:
+                    raise ValueError('executor_workers must be positive')
+                if context_variables.get('generation_guidance'):
+                    if soft_minimum is None:
+                        soft_minimum = policy.get('iteration_minimum_samples')
+                else:
+                    max_replenish_rounds = int(policy.get('initial_generation_rounds', max_replenish_rounds))
         allocation_subtasks = (metadata.allocation or {}).get("subtasks") or {}
+
+        mode = kwargs.get('generation_mode', 'planned')
+        if mode not in ('planned', 'legacy'):
+            raise ValueError('generation_mode must be planned or legacy')
+        if not subtask_order:
+            print('[BenchmarkFlow] No allocated samples to generate.')
+            return metadata
+        context_variables['generation_mode'] = mode
+        context_variables['max_web_searches'] = int(kwargs.get('max_web_searches', 3))
+        if mode == 'planned':
+            # Never read legacy transformation/verification caches in the new path.
+            output_root = os.path.join(self.cache_path, 'generation', 'planned-v1')
+            context_variables['generation_output_root'] = output_root
+            context_variables['transformed_buffer'] = {}
+            context_variables['generation_verified'] = {}
+            context_variables['generation_results'] = {}
+            context_variables['reuse_accepted_cache'] = bool(kwargs.get('reuse_accepted_cache', False))
+            context_variables['generation_reused_accepted'] = {}
+            # A manually shortened cached todo is a fixed test selection, not
+            # a request to refill back to the allocation's original quota.
+            todo_counts = {sid: len({(p['dataset_id'], idx)
+                for p in context_variables['pairs_by_subtask'][sid]
+                for idx in p.get('idx_todo', [])}) for sid in subtask_order}
+            sampled_todo = any(todo_counts[sid] < max(
+                int(allocation_subtasks.get(sid, {}).get('quota', 0) or 0),
+                sum(int(p.get('need_n', 0) or 0)
+                    for p in context_variables['pairs_by_subtask'][sid]))
+                for sid in subtask_order)
+            if sampled_todo:
+                max_replenish_rounds = 1
+                allocation_subtasks = {sid: {'quota': todo_counts[sid]} for sid in subtask_order}
+                print(f'[BenchmarkFlow] Sampled idx_todo: {todo_counts}; automatic refill disabled.')
+            active_subtasks = list(subtask_order)
+            for replenish_round in range(max(1, max_replenish_rounds)):
+                for subtask_number, subtask_id in enumerate(active_subtasks, 1):
+                    print(f'[BenchmarkFlow] Generation round={replenish_round + 1}/{max(1, max_replenish_rounds)}; '
+                          f'subtask={subtask_number}/{len(active_subtasks)} ({subtask_id})', flush=True)
+                    context_variables['current_subtask_id'] = subtask_id
+                    context_variables['current_pairs'] = context_variables['pairs_by_subtask'][subtask_id]
+                    context_variables['model_config_path'] = self.model_config_path
+                    context_variables = iterative_transform_batch(
+                        context_variables=context_variables,
+                        cache_root=None if force_recompute else output_root,
+                        max_workers=max_workers)
+                    _save_transform_cache(output_root, context_variables, subtask_id)
+                    result = context_variables['generation_verified'][subtask_id]
+                    from benchHarness.executor.planned_generation import write_json
+                    write_json(os.path.join(output_root, CACHE_FNAME_VERIFIED_BUFFER.format(subtask_id=subtask_id)), result)
+                gaps = _compute_gap_per_subtask(subtask_order, context_variables['generation_verified'], allocation_subtasks)
+                accepted_count = sum(sum(len(rows) for rows in value.get('verified_buffer', {}).values())
+                                     for value in context_variables['generation_verified'].values())
+                if soft_minimum is not None and accepted_count >= int(soft_minimum):
+                    print(f'[BenchmarkFlow] Soft sample target met: {accepted_count} accepted; '
+                          f'minimum={soft_minimum}.')
+                    break
+                if not gaps or replenish_round + 1 >= max(1, max_replenish_rounds):
+                    break
+                if not _refill_idx_todo_for_replenishment(context_variables, gaps, allocation_subtasks):
+                    break
+                active_subtasks = list(gaps)
+            if gaps:
+                print(f'[BenchmarkFlow] Remaining content quota gap: {gaps}')
+            # Preserve the actual source cohort after refill for feedback iteration.
+            write_json(os.path.join(output_root, 'generator_inputs_final.json'), {
+                'benchmark_task_id': context_variables.get('benchmark_task_id') or context_variables.get('task_id'),
+                'pairs_by_subtask': context_variables['pairs_by_subtask'],
+                'dataset_index_pool': context_variables.get('dataset_index_pool', {}),
+                'subtask_order': subtask_order,
+                'allocation': metadata.allocation,
+            })
+            write_json(os.path.join(output_root, 'generation_summary.json'), {
+                'version': 'planned-v1', 'quota_gaps': gaps,
+                'initial_todo_counts': todo_counts, 'sampled_todo': sampled_todo,
+                'reused_accepted_cache': context_variables.get('generation_reused_accepted', {}),
+                'stats': {sid: result['stats'] for sid, result in context_variables['generation_verified'].items()}})
+            from benchHarness.executor.generation_contracts import fingerprint
+            results = context_variables['generation_results']
+            write_json(os.path.join(output_root, 'generation_results_final.json'),
+                       {'results': results, 'digest': fingerprint(results)})
+            # These results already passed the short inspector; do not inspect again.
+            export_evaluation(output_root, subtask_ids=subtask_order)
+            print(f'[BenchmarkFlow] Planned content results saved under: {output_root}')
+            return metadata
 
         if force_recompute:
             context_variables.pop("transformed_buffer", None)
@@ -307,7 +428,7 @@ class BenchmarkFlow(FlowModule):
             #     _save_transform_cache(self.cache_path, context_variables, subtask_id)
 
         print(f"[BenchmarkFlow] Verified buffers saved under: {self.cache_path}")
-        export_evaluation(self.cache_path)
+        export_evaluation(self.cache_path, subtask_ids=subtask_order)
 
         return metadata
 
@@ -386,6 +507,10 @@ class BenchmarkFlow(FlowModule):
                 self._reinject_context_after_cache_load(context_variables, tool_config_path)
                 if grounding_accepted:
                     break
+                if (context_variables.get("grounding_result") or {}).get("status") == "incomplete":
+                    context_variables["_benchmark_flow_status"] = "grounding_incomplete"
+                    context_variables["_benchmark_flow_feedback"] = context_variables.get("grounding_feedback", "")
+                    return metadata, context_variables
             else:
                 fb = str(context_variables.get("grounding_feedback", "") or "").strip()
                 print("[BenchmarkFlow] Grounding was rejected too many times (reached max_design_grounding_rounds).")
@@ -394,13 +519,29 @@ class BenchmarkFlow(FlowModule):
                 return metadata, context_variables
 
             quota_model = get_tool_model("importance_and_quota", self.model_config_path)
+            quota_cache = None
+            if (context_variables.get("grounding_result") or {}).get("version") == "adaptive-v1":
+                from tools.planner_tools.grounding.grounding_materials import digest, task_view
+                quota_cache = "adaptive-v1/" + digest({"target_size": metadata.target_size,
+                    "tasks": [{"id": task["id"], **task_view(task)} for task in context_variables.get("subtasks", [])],
+                    "model": quota_model})[:20]
             subtasks, notes = self._init_importance_and_quota({
                 "short_topic": metadata.topic,
                 "target_size": metadata.target_size,
                 "subtasks": context_variables.get("subtasks", []),
                 "model": quota_model,
-            }, force_recompute=force_recompute_chain or backtracking_happened)
-            context_variables["subtasks"] = subtasks
+                "model_config_path": self.model_config_path,
+            }, force_recompute=force_recompute_chain or backtracking_happened, cache_name=quota_cache)
+            # Quota caches own importance/quota, never the Grounding products.
+            if quota_cache:
+                quotas = {task["id"]: task for task in subtasks}
+                for task in context_variables.get("subtasks", []):
+                    if task["id"] not in quotas:
+                        raise ValueError("Quota result does not cover current Grounding subtasks.")
+                    for key in ("importance", "quota"):
+                        task[key] = quotas[task["id"]][key]
+            else:
+                context_variables["subtasks"] = subtasks
             context_variables["quota_notes"] = notes
             context_variables["allocation_config"] = _build_allocation_orders(context_variables)
             metadata = await self._run_allocation(
@@ -437,7 +578,15 @@ class BenchmarkFlow(FlowModule):
         *args,
         **kwargs,
     ) -> TopicMetadata:
-        tool_config_path = kwargs.get("tool_config_path", "./utils/resources/tools.yaml")
+        # This value is passed explicitly below; do not forward it again in kwargs.
+        tool_config_path = kwargs.pop("tool_config_path", "./utils/resources/tools.yaml")
+        guidance_path = kwargs.pop("generation_guidance_path", None)
+        generation_guidance = {}
+        if guidance_path is not None:
+            if kwargs.get("generation_mode", "planned") != "planned":
+                raise ValueError('generation_guidance_path requires planned generation mode')
+            from benchHarness.executor.generation_guidance import load_generation_guidance_map
+            generation_guidance = load_generation_guidance_map(guidance_path, task_id)
         force_recompute_chain = bool(kwargs.get("force_recompute", False))
         context_variables: Dict[str, Any] = {
             "task_id": task_id,
@@ -447,6 +596,11 @@ class BenchmarkFlow(FlowModule):
             "dataset_card_dir": dataset_card_dir,
             "cache_root": self.cache_path,
             "cache_path": self.cache_path,
+            "generation_mode": kwargs.get("generation_mode", "planned"),
+            "max_web_searches": int(kwargs.get("max_web_searches", 3)),
+            "max_workers_grounding": int(kwargs.get("max_workers_grounding", 4)),
+            "grounding_sample_count": int(kwargs.get("grounding_sample_count", 3)),
+            "grounding_budgets": kwargs.get("grounding_budgets") or {},
         }
         topic_dict = self._load_tp({
             "task_id": task_id,
@@ -467,6 +621,7 @@ class BenchmarkFlow(FlowModule):
             "description": description,
             "target_size": target_size,
             "model": scope_model,
+            "model_config_path": self.model_config_path,
         }, force_recompute=force_recompute_chain)
         context_variables.update({
             "short_topic": scope.get("short_topic", "benchmark"),
@@ -504,23 +659,31 @@ class BenchmarkFlow(FlowModule):
         context_variables.pop("id2card", None)
 
         print("[BenchmarkFlow] Building generator inputs...")
-        generator_input = self._generator_input({
+        generator_input_args = {
             "benchmark_task_id": task_id,
             "subtasks": context_variables.get("subtasks", []),
             "id2card": id2card,
             "allocation": metadata.allocation,
-        }, force_recompute=force_recompute_chain)
+        }
+        generator_input = self._generator_input(generator_input_args, force_recompute=force_recompute_chain)
+        if any(task.get("grounding") for task in context_variables.get("subtasks", [])):
+            generator_input = attach_grounding_blueprints(generator_input, context_variables["subtasks"])
+            self._generator_input.save_cache(
+                tool=build_generator_inputs, tool_args=generator_input_args, tool_result=generator_input)
         context_variables.update(generator_input)
         # Restore only the dataset cards needed by the generator (subset of full id2card).
-        context_variables["dataset_cards"] = {
-            did: id2card.get(did, {})
-            for did in context_variables.get("dataset_index_pool", {})
-        }
+        needed_datasets = set(context_variables.get("dataset_index_pool", {}))
+        needed_datasets.update(pair["dataset_id"] for pairs in context_variables.get("pairs_by_subtask", {}).values()
+                               for pair in pairs)
+        context_variables["dataset_cards"] = {did: id2card.get(did, {}) for did in needed_datasets}
         print("[BenchmarkFlow] Generator inputs built.")
 
         # Step 6: parallel transform per subtask, then single-pass verify.
+        if generation_guidance:
+            context_variables["generation_guidance"] = generation_guidance
+        generator_kwargs = {k: v for k, v in kwargs.items() if k != 'force_recompute'}
         metadata = await self._run_generator(
-            metadata, context_variables, topic_id=topic_id, force_recompute=force_recompute_chain, **kwargs
+            metadata, context_variables, topic_id=topic_id, force_recompute=force_recompute_chain, **generator_kwargs
         )
         return metadata
 
@@ -554,22 +717,49 @@ def main(args: Any):
             target_size=target_size,
             topic_id=args.topic_id,
             dataset_cards=dataset_cards,
+            tool_config_path=args.tool_config_path,
+            generation_mode=args.generation_mode,
+            generation_subtask=args.generation_subtask,
+            generation_guidance_path=args.generation_guidance_path,
+            reuse_accepted_cache=args.reuse_accepted_cache,
+            max_workers_transform=args.max_workers_transform,
+            max_workers_grounding=args.max_workers_grounding,
+            max_web_searches=args.max_web_searches,
+            max_verify_replenish_rounds=args.max_verify_replenish_rounds,
+            force_recompute=args.force_recompute,
         )
     )
 
 
 def get_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--generation_mode', choices=('planned', 'legacy'), default='planned',
+                        help='Planned generation with optional quality refinement and bounded preflight recovery, or the previous iterative path')
+    parser.add_argument('--max_workers_transform', type=int, default=DEFAULT_MAX_WORKERS_TRANSFORM)
+    parser.add_argument('--generation_subtask', default=None,
+                        help='Generate only this allocated subtask ID; planner and cached todos are unchanged')
+    parser.add_argument('--generation_guidance_path', default=None,
+                        help='Optional JSON mapping subtask IDs to guidance files for planned generation; '
+                             'relative guidance paths are resolved from the JSON directory')
+    parser.add_argument('--max_workers_grounding', type=int, default=4,
+                        help='Shared model-call limit across all Grounding main agents and their child calls')
+    parser.add_argument('--max_web_searches', type=int, default=3,
+                        help='Maximum focused evidence requests per sample in planned mode')
+    parser.add_argument('--force_recompute', action='store_true')
+    parser.add_argument('--reuse_accepted_cache', action='store_true',
+                        help='Reuse matching accepted v1.2 non-audio samples after the v1.3 audio-only prompt update; preserve their original version')
+    parser.add_argument('--max_verify_replenish_rounds', type=int, default=DEFAULT_MAX_VERIFY_REPLENISH_ROUNDS,
+                        help='Total generation/verification rounds in planned mode (1 disables refill)')
     parser.add_argument(
         "--instance_path",
         type=str,
         default=str(_PROJECT_ROOT) + os.sep,
-        help="Directory prefix for the user-query JSON; combined with --topic_id to form the full path (e.g. user_queries/user_query_01.json)",
+        help="Directory prefix for the user-query JSON; combined with --topic_id to form the full path (e.g. user_queries/user_query_03.json)",
     )
     parser.add_argument(
         "--topic_id",
         type=str,
-        default="user_queries/user_query_01",
+        default="user_queries/user_query_03",
         help="User-query identifier (path stem without .json); selects which benchmark instance to run",
     )
     parser.add_argument("--model", type=str, default=None, help="Override default agent model (deprecated, use --model_config_path instead)")
@@ -590,9 +780,13 @@ def get_args():
         "--cache_path",
         type=str,
         default=str(_PROJECT_ROOT / "cache") + os.sep,
-        help="Directory prefix for intermediate artifacts; combined with --topic_id (e.g. cache/user_queries/user_query_01/)",
+        help="Directory prefix for intermediate artifacts; combined with --topic_id (e.g. cache/user_queries/user_query_03/)",
     )
     args = parser.parse_args()
+    if args.reuse_accepted_cache and (args.force_recompute or args.generation_mode != 'planned'):
+        parser.error('--reuse_accepted_cache requires planned mode without --force_recompute')
+    if args.generation_guidance_path is not None and args.generation_mode != 'planned':
+        parser.error('--generation_guidance_path requires planned mode')
     return args
 
 

@@ -573,19 +573,18 @@ def _build_allocation_orders(ctx: dict) -> dict:
     allocation_config["subtasks"] = {}
     for st in subtasks:
         scored = st.get("scored_candidates") or {}
-        n_candidates = len(scored)
+        grounding = st.get("grounding")
+        if isinstance(grounding, dict):
+            source_ids = [source["dataset_id"] for source in grounding.get("sources", [])]
+        else:
+            source_ids = [dataset_id for dataset_id, _ in sorted(
+                scored.items(), key=lambda item: float(item[1].get("scores", {}).get("overall", 0.0)), reverse=True)]
+        n_candidates = len(source_ids)
         cap_ratio = round(min(1, 1 / n_candidates), 2) if n_candidates > 0 else 1.0
         st_config = {
             "quota": st.get("quota", 0),
             "cap_ratio": cap_ratio,
-            "dataset_allocation_order": [
-                dataset_id
-                for dataset_id, _ in sorted(
-                    scored.items(),
-                    key=lambda item: float(item[1].get("scores", {}).get("overall", 0.0)),
-                    reverse=True,
-                )
-            ],
+            "dataset_allocation_order": source_ids,
         }
         st_id = st.get("id")
         if st_id:
@@ -594,7 +593,10 @@ def _build_allocation_orders(ctx: dict) -> dict:
     allocation_config["datasets"] = {}
     seen_datasets: set = set()
     for st in subtasks:
-        for dataset_id in (st.get("scored_candidates") or {}):
+        grounding = st.get("grounding")
+        dataset_ids = ([source["dataset_id"] for source in grounding.get("sources", [])]
+                       if isinstance(grounding, dict) else list(st.get("scored_candidates") or {}))
+        for dataset_id in dataset_ids:
             seen_datasets.add(dataset_id)
     for dataset_id in seen_datasets:
         allocation_config["datasets"][dataset_id] = {

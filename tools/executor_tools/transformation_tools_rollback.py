@@ -26,14 +26,14 @@ def _get_stage1_model(model_config_path=None):
     try:
         return get_tool_model("transform_stage1", model_config_path)
     except Exception:
-        return "gpt-5.1"  # Fallback default
+        return "gpt-6.1-sol"  # Fallback default
 
 def _get_stage2_model(model_config_path=None):
     """Get stage2 model from config, with fallback to default."""
     try:
         return get_tool_model("transform_stage2", model_config_path)
     except Exception:
-        return "gpt-5.1"  # Fallback default
+        return "gpt-6.1-sol"  # Fallback default
 
 def _get_stage0_model(model_config_path=None):
     """Get sample-brief model from config, with fallback to stage1/default."""
@@ -1360,7 +1360,7 @@ def _run_llm_step(
     subtask: Dict[str, Any],
     step: Dict[str, Any],
     resources: Dict[str, Any],
-    model: str = "gpt-5.1",
+    model: str = "gpt-6.1-sol",
     dataset_json_path: Optional[str] = None,
     dataset_id: Optional[str] = None,
 ) -> Tuple[bool, Dict[str, Any], str]:

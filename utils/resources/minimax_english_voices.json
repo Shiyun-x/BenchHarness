@@ -1,0 +1,130 @@
+[
+    {
+        "voice_id":  "Santa_Claus ",
+        "description":  [
+
+                        ],
+        "voice_name":  "Santa Claus",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "Grinch",
+        "description":  [
+
+                        ],
+        "voice_name":  "Grinch",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "Rudolph",
+        "description":  [
+
+                        ],
+        "voice_name":  "Rudolph",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "Arnold",
+        "description":  [
+
+                        ],
+        "voice_name":  "Arnold",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "Charming_Santa",
+        "description":  [
+
+                        ],
+        "voice_name":  "Charming Santa",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "Charming_Lady",
+        "description":  [
+
+                        ],
+        "voice_name":  "Charming Lady",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "Sweet_Girl",
+        "description":  [
+
+                        ],
+        "voice_name":  "Sweet Girl",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "Cute_Elf",
+        "description":  [
+
+                        ],
+        "voice_name":  "Cute Elf",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "Attractive_Girl",
+        "description":  [
+
+                        ],
+        "voice_name":  "Attractive Girl",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "Serene_Woman",
+        "description":  [
+
+                        ],
+        "voice_name":  "Serene Woman",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "English_Trustworthy_Man",
+        "description":  [
+                            "一位值得信赖、富有磁性的青年男性声音，带通用美式口音。"
+                        ],
+        "voice_name":  "Trustworthy Man",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "English_Graceful_Lady",
+        "description":  [
+                            "一位优雅的中年女士，带有经典的英式口音，散发着成熟的魅力。"
+                        ],
+        "voice_name":  "Graceful Lady",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "English_Aussie_Bloke",
+        "description":  [
+                            "一位阳光开朗的青年男性，带有独特的澳大利亚口音。"
+                        ],
+        "voice_name":  "Aussie Bloke",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "English_Whispering_girl",
+        "description":  [
+                            "一位青年女性的轻柔耳语声，带通用美式口音，非常适合ASMR内容。"
+                        ],
+        "voice_name":  "Whispering girl",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "English_Diligent_Man",
+        "description":  [
+                            "一位真诚勤奋的青年男性，带有印度口音。"
+                        ],
+        "voice_name":  "Diligent Man",
+        "created_time":  "1970-01-01"
+    },
+    {
+        "voice_id":  "English_Gentle-voiced_man",
+        "description":  [
+                            "一位声音温柔、富有磁性的青年男性，带通用美式口音。"
+                        ],
+        "voice_name":  "Gentle-voiced man",
+        "created_time":  "1970-01-01"
+    }
+]

@@ -33,6 +33,22 @@ def _is_force_no_cache() -> bool:
     return _FORCE_NO_CACHE_FOR_RUN
 
 
+def _select_grounding_cache_mode(cache_exists: bool) -> str:
+    """Apply the existing CLI cache policy to the independent Grounding runner."""
+    if _is_force_no_cache():
+        return 'fresh'
+    if not cache_exists:
+        return 'auto'
+    choice = single_select_menu(
+        ['Yes', 'Resume', 'No'],
+        "The agent 'Grounding Agent' cache exists, do you want to use it?",
+    )
+    if choice == 'No':
+        _enable_force_no_cache()
+        return 'fresh'
+    return 'use' if choice == 'Yes' else 'resume'
+
+
 def _normalize_agent_name(agent_name: str) -> str:
     return (agent_name or "").replace(" ", "_").lower()
 
@@ -82,6 +98,8 @@ def _clear_grounding_runtime_state(context_variables: Dict) -> None:
         "transformability",
         "scored_candidates",
         "scored_status",
+        "grounding",
+        "grounding_blueprints",
     }
     for st in subtasks:
         if isinstance(st, dict):
@@ -300,7 +318,7 @@ class AgentModule:
                 _enable_force_no_cache()
                 return None, False
         return None, False
-    
+
 class ToolModule:
     def __init__(self, tool: Callable[[Any], Union[str, Dict]], cache_path: str):
         self.tool = tool
@@ -355,7 +373,7 @@ class ToolModule:
         return None
 
 class FlowModule(ABC):
-    def __init__(self, cache_path: str, log_path: Union[str, None, MetaChainLogger] = None, model: str = "gpt-5-mini", model_config_path: str = None):
+    def __init__(self, cache_path: str, log_path: Union[str, None, MetaChainLogger] = None, model: str = "gpt-6.1-sol", model_config_path: str = None):
         _reset_cache_policy()
         self.cache_path = cache_path
         self.client = MetaChain(log_path=log_path, model_config_path=model_config_path)
@@ -366,5 +384,3 @@ class FlowModule(ABC):
     
     async def __call__(self, *args, **kwargs):
         return await self.forward(*args, **kwargs)
-
-    

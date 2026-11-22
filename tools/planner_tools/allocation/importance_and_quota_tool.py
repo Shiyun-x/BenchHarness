@@ -41,12 +41,13 @@ No extra keys. No markdown. No extra text.
 
 @register_tool("llm_plan_quota")
 def llm_plan_quota(
-    model: str = "gpt-5-mini",
+    model: str = "gpt-6.1-sol",
     temperature: float = 0.2,
     max_tokens: int = 2048,
     subtasks: List[Dict[str, Any]] = None,
     short_topic: str = "",
     target_size: int = 0,
+    model_config_path: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], str]:
     """
     Don't pass any direct arguments.
@@ -62,6 +63,7 @@ def llm_plan_quota(
         system_prompt="",
         user_prompt=prompt,
         model=model,
+        model_config_path=model_config_path,
         temperature=temperature,
         max_tokens=max_tokens,
     )

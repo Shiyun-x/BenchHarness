@@ -45,4 +45,5 @@ GROUNDING_STAGE_KEYS: tuple = (
     "dataset_preference", "retrieval_result", "retrieval_searched",
     "selected_candidate_ids", "candidate_selection_done",
     "transformability", "scored_candidates", "scored_status",
+    "grounding", "grounding_blueprints",
 )

@@ -18,7 +18,7 @@ def _get_verify_model(model_config_path=None):
     try:
         return get_tool_model("verify", model_config_path)
     except Exception:
-        return "gpt-5.1"  # Fallback default
+        return "gpt-6.1-sol"  # Fallback default
 
 VERIFY_MODEL = _get_verify_model()  # Default for backward compatibility
 VERIFY_SHARED_CORE = """

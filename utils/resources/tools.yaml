@@ -1,64 +1,66 @@
 # pure_audio_tools.yaml
 tools:
   - name: text2speech
+    summary: Convert speech scripts into audio segments, with consistent voices for each speaker.
     category: scenario_alignment
-    description: Convert text (single-turn or multi-turn dialog) into speech audio.
+    description: >-
+      Prepare independent speech segments for deferred TTS, for one person or a
+      multi-person conversation. Each segment contains one person's continuous speech.
+      A label identifies that person solely for consistent voice assignment within the
+      item; it does not mark a question's target. The delivery backend maps labels to
+      voices and calls MiniMax separately for each segment. This tool does not assemble
+      a conversation. Generator prepares scripts now; actual synthesis runs after content acceptance.
+      Keep total audio duration per sample within 90 seconds at a natural speaking pace.
     modalities: [audio]
     io:
       inputs: [text]
-      outputs: [audio]
+      outputs: [audio_segments]
     behavior:
       - speech synthesis
       - multi-speaker (optional)
       - multi-language (optional)
+      - stable label-to-voice mapping across all segments and outputs of an item
+      - preserve independently reusable segment IDs
     params:
-      - dialog: "list of {text: string, speaker: string (optional, required when multi-speaker), language: string (optional, default: \"en\"), gender: string (optional, male|female)}"
+      - segments: "Nonempty list of {id: required unique safe string, label: required nonempty person identifier, text: required spoken text, language: optional code such as en/zh-cn/auto, gender: optional male/female/auto, speed: optional 0.9-1.8 inclusive, vol: optional 0.01-10, pitch: optional integer -12..12, pause_after_ms: optional nonnegative integer}. IDs start with a letter, then letters/digits/underscore/hyphen, at most 64 characters. Keep the same label for the same person in every segment, including independently presented clips. Use different labels for different people. Text is only what is spoken, without speaker names or production instructions. MiniMax text must be shorter than 10000 characters per segment; split longer speech into segments with the same label. Do not supply target flags, model IDs, voice IDs, API keys or file paths."
     typical_uses:
       - "Dataset has dialog text but evaluation expects speech input."
       - "Benchmark requires multi-speaker or multilingual speech scenarios."
-    memory:
-      retain:
-        inputs:
-          - tool_args.dialog
-        outputs:
-          - result.merged_audio_path
-      stage1_summary:
-        max_chars: 500
-      stage2_payload:
-        mode: explicit_resource_only
+      - "Generator: return a top-level media_jobs array with {kind: tts, segments: [{id: s1, label: A, text: 'Hello.'}]}. One job can schedule many separate API requests."
+      - "Reference a standalone segment as media:audio:s1 in a schema audio field. Preserve the schema's scalar/list type and the intended listening order. Runtime assigns and binds real paths; do not invent files."
+      - "Use overlay_audio to assemble selected segments into a conversation or other named output. Keep script, composition and QA consistent. Content review examines scripts and composition; real audio is checked at delivery."
 
-  - name: web_search
-    category: knowledge_grounding
-    description: Search the public web for up-to-date factual information and return concise answers with sources.
-    modalities: [text, image, audio]
+  - name: overlay_audio
+    summary: Combine speech segments into audio clips in sequence or with overlapping speakers.
+    category: scenario_alignment
+    description: >-
+      Prepare one or more named audio outputs by selecting speech segments and
+      arranging their order, pauses or overlap. Ordinary dialogue plays sequentially;
+      explicit start times allow simultaneous speech or interruptions. This tool does
+      not synthesize voices or decide which person is a question's target. Actual
+      assembly runs after TTS and before optional background music or environmental noise.
+    modalities: [audio]
     io:
-      inputs: [text, image]
-      outputs: [text]
+      inputs: [audio_segments]
+      outputs: [audio]
     behavior:
-      - web retrieval
-      - source-grounded factual summarization
-      - model-internal iterative search when needed
+      - overlap speech segments at explicit start times
+      - append segments in track order when start_ms is omitted
+      - optional per-segment gain and global peak attenuation to avoid clipping
+      - preserve the entire duration of every segment
     params:
-      - query: "string, the concrete web search request for this tool call: state exactly what fact/information to retrieve for this sample, anchored in resource values or attached images; not a generic task description"
-      - image_paths: "list[string], optional local paths or URLs of images used as visual context"
+      - segments: "Backend-only {id, audio_path} records bound from TTS. Generator supplies segment_id references, never file paths."
+      - outputs: "Nonempty list of {id: required unique safe output identifier distinct from segment IDs, tracks: nonempty list of {segment_id: required existing speech segment ID, start_ms: optional integer 0-3600000, gain_db: optional number -60..12, pause_after_ms: optional integer 0-3600000}, noise: optional configuration ONLY when add_environmental_noise is enabled, background_music: optional configuration ONLY when add_background_music is enabled}. For background_music use {intensity: low|medium|high} OR {speech_to_music_db: number -5..0, default 0}. Each output may select any subset of segments, and a segment can be reused across or within outputs. Omit start_ms to append after the current timeline end and pause; equal starts mean simultaneous speech. Default pauses are 150 ms for the same label, 300 ms for different labels; explicit pause_after_ms overrides defaults. Do not guess durations or end times; assembly uses generated WAV duration. Keep total audio duration per sample within 90 seconds. IDs follow the same safe format as segment IDs."
     typical_uses:
-      - "Need external facts or information during sample transformation."
-      - "Fill knowledge gaps or provide additional information not present in source dataset fields."
-    memory:
-      retain:
-        inputs:
-          - tool_args.query
-          - tool_args.image_paths
-        outputs:
-          - result.answer
-          - result.sources
-          - result.insufficient_info
-      stage1_summary:
-        max_chars: 700
-      stage2_payload:
-        mode: explicit_resource_only
+      - "Test target-speaker comprehension with another speaker talking at the same time."
+      - "Create an interruption or partly overlapping exchange with distinguishable speaker voices."
+      - "Generator: add {kind: overlay_audio, outputs: [{id: conversation, tracks: [{segment_id: s1}, {segment_id: s2}]}]} to media_jobs. Reference the result as media:audio:conversation in the schema audio field."
+      - "Separate outputs can use different subsets of one segment collection. A one-track output is valid, as is a standalone segment referenced directly without assembly. Output IDs name audio assets; only speech labels identify people."
+
+# Web search is native to the Generator Proposal agent, outside this asset-tool catalog.
 
   - name: speech2text
+    summary: Transcribe speech audio into text.
     category: scenario_alignment
     description: Convert speech audio into text transcription.
     modalities: [audio]
@@ -72,19 +74,9 @@ tools:
       - audio_path: string (path to input audio file)
     typical_uses:
       - "Dataset has audio questions, but downstream evaluation expects text inputs."
-    memory:
-      retain:
-        inputs:
-          - tool_args.audio_path
-        outputs:
-          - result.transcript
-          - result.text
-      stage1_summary:
-        max_chars: 500
-      stage2_payload:
-        mode: explicit_resource_only
 
   - name: add_environmental_noise
+    summary: Add environmental noise to audio to test listening in noisy conditions.
     category: scenario_alignment
     description: Add environment scene noise to an audio file using a noise library.
     modalities: [audio]
@@ -96,28 +88,52 @@ tools:
       - scene-based noise (city/office/vehicle/etc.)
       - adjustable SNR (low/medium/high)
     params:
-      - audio_path: "string, path to clean audio file"
+      - audio_path: "Backend-only path to clean audio; runtime binds it after speech synthesis. Do not invent this path in Generator output."
       - noise_type: "string, noise scene label (e.g., 'office', 'city_center', 'car', 'library')"
       - intensity: "string, {low|medium|high}, default='medium'"
-      - seed: "integer, optional, random seed for selecting noise file"
+      - seed: "Backend-only optional integer for choosing a noise file; not part of Generator's output noise object."
     typical_uses:
       - "Simulate real-world noisy audio conditions."
       - "Convert clean speech into in-the-wild evaluation conditions."
       - "Align dataset to tasks requiring robustness under noise."
-    memory:
-      retain:
-        inputs:
-          - tool_args.audio_path
-          - tool_args.noise_type
-          - tool_args.intensity
-        outputs:
-          - result.noisy_audio_path
-      stage1_summary:
-        max_chars: 400
-      stage2_payload:
-        mode: explicit_resource_only
+      - "Generator: set noise: {noise_type: '<scene>', intensity: low|medium|high} on each selected overlay_audio output. The same audio reference then binds to its final noisy file. Other outputs and standalone segments remain unchanged. For a single segment that needs noise, create a one-track named output."
+      - "Noise is a separate final delivery step: synthesize segments, assemble each output, then run the noise batch on selected outputs. It never modifies speech scripts or runs during content review. Runtime assigns all clean and noisy file paths. Legacy dialog jobs with a tts noise object remain readable."
+
+  - name: add_background_music
+    summary: Add an English song with lyrics behind speech as a listening distractor.
+    category: scenario_alignment
+    description: >-
+      Add an English song with sung lyrics and accompaniment as background interference
+      to selected assembled speech outputs. This tests confusion between target speech
+      and background lyrics. At generation time only record parameters; actual music
+      selection and mixing run in a separate delivery pass after TTS and assembly.
+      The backend selects lyric-bearing intervals from the configured JamendoLyrics
+      library, keeps music at a stable relative level without ducking, and preserves
+      the foreground duration. Lyrics are distractors; QA and the speech transcript
+      continue to refer to the target speech.
+    modalities: [audio]
+    io:
+      inputs: [audio]
+      outputs: [audio]
+    behavior:
+      - English vocal music with lyrics and accompaniment
+      - timed lyric windows to avoid instrumental intros and interludes
+      - deterministic selection and short crossfades when looping
+      - active speech RMS level reference and shared peak attenuation
+      - optional simultaneous environmental noise at delivery
+    params:
+      - audio_path: "Backend-only foreground audio path assigned by runtime; never invent file paths in Generator output."
+      - intensity: "Optional low|medium|high. Target speech-to-music ratios are respectively 0/-2.5/-5 dB on active speech frames. Use this OR speech_to_music_db; omitting both defaults to 0 dB."
+      - speech_to_music_db: "Optional number -5..0, default 0 when intensity is omitted. Larger values make the song quieter; zero gives equal active-frame RMS. This measures the entire song, not an isolated singing stem."
+    typical_uses:
+      - "Test whether a model mixes background English lyrics into target-speaker transcription or comprehension."
+      - "Generator: set background_music: {speech_to_music_db: 0} on selected overlay_audio outputs, or background_music: {intensity: medium}. The same media:audio:<output-id> reference binds to the delivered mix."
+      - "For one speech segment with music, create a one-track named output. Unselected outputs and directly referenced segments stay clean."
+      - "Do not write song titles, lyrics, music IDs, timestamps, seeds or library paths. Runtime chooses real English audio using timed lyrics, records its selection, and reuses unchanged speech."
+      - "Can coexist with noise on an output if add_environmental_noise is enabled; both backgrounds are mixed once relative to clean speech."
 
   - name: apply_image_degradation
+    summary: Reduce image quality with configurable degradation effects.
     category: scenario_alignment
     description: Apply various degradation effects to images to simulate real-world quality issues.
     modalities: [image]
@@ -135,21 +151,9 @@ tools:
     typical_uses:
       - "Simulate real-world image quality issues."
       - "Align dataset to tasks requiring robustness to degraded images."
-    memory:
-      retain:
-        inputs:
-          - tool_args.image_path
-          - tool_args.mode
-          - tool_args.severity
-        outputs:
-          - result.degraded_image_path
-          - result.image_path
-      stage1_summary:
-        max_chars: 400
-      stage2_payload:
-        mode: explicit_resource_only
 
   - name: cleanup_interim_fields
+    summary: Mark temporary fields for removal during pipeline cleanup.
     category: pipeline_maintenance
     description: Cleanup-only no-op pure tool used to mark deterministic deletion of interim fields.
     modalities: [text, audio, image]

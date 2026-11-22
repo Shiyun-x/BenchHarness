@@ -1,16 +1,395 @@
 {
-  "root_path": "dataset/image/comprehension",
+  "root_path": "dataset/image",
+  "0258eb36": [
+    "BacteriaSegmentation/images",
+    "BacteriaSegmentation/masks"
+  ],
+  "034c8755": [
+    "Image_Similarity_Visual_Question_Answering/images"
+  ],
+  "039b9fab": [
+    "Car_Model_Matching/images"
+  ],
+  "04a07ab2": [
+    "safety-vests-detection/images"
+  ],
+  "05501a70": [
+    "construction-safety-equipment-detection/images"
+  ],
   "076fdf72": [
     "car_brands_recognition/images"
+  ],
+  "07c08254": [
+    "CarpetAnomalyDetection/annotations",
+    "CarpetAnomalyDetection/images"
+  ],
+  "0894094f": [
+    "terrain_recognition/images"
+  ],
+  "097493fe": [
+    "Spectrum_Graph_Car_Classification/images",
+    "Spectrum_Graph_Car_Classification/sounds"
+  ],
+  "0ab7a938": [
+    "RecipeIngredientDescription/images"
+  ],
+  "0adcb803": [
+    "geography_vqa/images"
+  ],
+  "0d418d2b": [
+    "vehicle_counting/images"
+  ],
+  "0d657407": [
+    "gun-detection/images"
+  ],
+  "0de59547": [
+    "SubtleDifferenceDescription/images"
+  ],
+  "0e37f185": [
+    "SequentialPhotoStorytelling/images"
+  ],
+  "10e98715": [
+    "Sporting-relatedVQA/images"
+  ],
+  "10ff7c44": [
+    "ComplexMulti-ScenarioDialogue/images"
+  ],
+  "1108bf3f": [
+    "WebpageContentVisualQuestionAnswering/images"
+  ],
+  "1124bb38": [
+    "CultureImageVisualQuestionAnswering/images"
+  ],
+  "1156dad6": [
+    "Multi-PageApplicationDocumentVisualQuestionAnswering/images"
+  ],
+  "11dcbe43": [
+    "seed_counting/images"
+  ],
+  "1230d923": [
+    "tabular-data-detection/images"
+  ],
+  "1270fa73": [
+    "ZipperAnomalyDetection/annotations",
+    "ZipperAnomalyDetection/images"
+  ],
+  "128a3e06": [
+    "damaged_egg_recognition/images"
+  ],
+  "156b6b45": [
+    "sheet_docvqa/images"
+  ],
+  "15f32623": [
+    "Myocardial_Infarction_Patients/images"
+  ],
+  "1780a00a": [
+    "Multi-imageNext-frameDescription/images"
+  ],
+  "18de7527": [
+    "bird-species-classification/images"
+  ],
+  "1a0145b7": [
+    "RaccoonDetection/images"
+  ],
+  "1c8e4d92": [
+    "AttributeCongruityReasoning/images"
+  ],
+  "1d262bc6": [
+    "VisualStepMatchingReasoning/images"
+  ],
+  "1eadd53f": [
+    "person_emotion_detection/images"
+  ],
+  "1f5dfceb": [
+    "AnimatedStoryCompletion/images"
+  ],
+  "1fded00b": [
+    "microorganism_image_classification/images"
+  ],
+  "20501d45": [
+    "traffic-light-detection/images"
+  ],
+  "2101758e": [
+    "deep_fake_detection/images"
+  ],
+  "21425817": [
+    "HistoricalMulti-SourceDialogue/images"
+  ],
+  "21c975d7": [
+    "Infrared_Thermal_Image_Classification/images"
+  ],
+  "24aa6474": [
+    "short_expression_visual_grounding/images"
+  ],
+  "24f59d95": [
+    "MultimodalDocumentFine-grainedReasoning/images"
+  ],
+  "28698c67": [
+    "flood-area-segmentation/annotations",
+    "flood-area-segmentation/images"
+  ],
+  "29021033": [
+    "CapsuleAnomalyDetection/annotations",
+    "CapsuleAnomalyDetection/images"
+  ],
+  "29f2c068": [
+    "mathematical_synthetic_scene_vqa/images"
+  ],
+  "2cf6cbf5": [
+    "VisualStepCompletion/images"
+  ],
+  "2e52ea16": [
+    "circuit-elements-detection/images"
+  ],
+  "2eee2b2d": [
+    "Multi-PageAgreementDocumentVisualQuestionAnswering/images"
+  ],
+  "2f67c8f5": [
+    "Multi-TurnInteractiveDialogue/images"
+  ],
+  "2f6fc4e9": [
+    "bee-detection-dataset/images"
+  ],
+  "2f79d8e0": [
+    "sketch2html_code_generation/annotations",
+    "sketch2html_code_generation/images"
+  ],
+  "32512a1d": [],
+  "325742c7": [
+    "utensil_recognition/images"
+  ],
+  "3364bedc": [
+    "medical_image_qa/images"
+  ],
+  "345598bd": [
+    "Multi-ImageAlterationDescription/images"
+  ],
+  "34fa7768": [
+    "Aircraft_Model_Matching/images"
+  ],
+  "366da9d6": [
+    "BottleAnomalyDetection/annotations",
+    "BottleAnomalyDetection/images"
+  ],
+  "3676e565": [
+    "radio-spectrogram-detection/images"
+  ],
+  "376e5a97": [
+    "resume_docvqa/images"
+  ],
+  "37c5239f": [
+    "emotion-detection-fer/images"
+  ],
+  "3a13a929": [
+    "AnimalImageMatting/annotations",
+    "AnimalImageMatting/images"
+  ],
+  "3c1c3393": [
+    "EmbodiedNavigatingVisualQuestionAnswering/images"
+  ],
+  "3d411cd9": [
+    "HazelnutAnomalyDetection/annotations",
+    "HazelnutAnomalyDetection/images"
+  ],
+  "42c9170f": [
+    "Multi-PageManualDocumentVisualQuestionAnswering/images"
+  ],
+  "42f2c0a0": [
+    "geometry_vqa/images"
+  ],
+  "452f1842": [
+    "fire-detection/images"
+  ],
+  "453d2a8e": [
+    "Multi-PageHandwrittenDocumentVisualQuestionAnswering/images"
+  ],
+  "46e0b599": [
+    "vehicle_instance_segmentation/annotations",
+    "vehicle_instance_segmentation/images"
+  ],
+  "489a0d35": [
+    "Numerical_Dual_Image_Description_Verification/images"
+  ],
+  "49179276": [
+    "smoke-detection/images"
+  ],
+  "4c12e775": [
+    "PumpkinLeafDiseasesRecognition/images"
+  ],
+  "4c4276b1": [
+    "famous-iconic-women/images"
+  ],
+  "4e53c684": [
+    "TransistorAnomalyDetection/annotations",
+    "TransistorAnomalyDetection/images"
+  ],
+  "4ef3e2e4": [
+    "Digital_Consistency_Comparison/images"
+  ],
+  "507bf40d": [
+    "image_style_classification/target_image"
+  ],
+  "5291a0b4": [
+    "DeepfishDetection/images"
+  ],
+  "53662cd6": [
+    "Handwritten_Formula_Visual_Question_Answering/images"
+  ],
+  "54f39f1e": [
+    "mathematical_statistical_reasoning_vqa/images"
+  ],
+  "55bec081": [
+    "license_plate_ocr/images"
+  ],
+  "5689e9e6": [
+    "retail-object-detection/images"
+  ],
+  "56fc35be": [
+    "TextualDocumentVQA/images"
+  ],
+  "5811f466": [
+    "satellite_image_caption/images"
+  ],
+  "5d9de044": [
+    "GenderRecognition/images"
+  ],
+  "5e0d67ff": [
+    "mathematical_textbook_vqa/images"
+  ],
+  "5ead0aa0": [
+    "reasoning_and_compositional_image_qa/images"
   ],
   "5f3dbd05": [
     "ArtImageVisualQuestionAnswering/images"
   ],
+  "5fc3dcea": [
+    "Multimodal_Neural_Translation/images"
+  ],
+  "5ff3353e": [
+    "ShipDetection/images"
+  ],
+  "61ad39ab": [
+    "sign-language-detection/images"
+  ],
+  "62d6e1df": [
+    "Dual-ImageCausal-and-EffectReasoning/images"
+  ],
+  "6575244a": [
+    "Context-AwareEmbodiedAgentDialogue/images"
+  ],
+  "66d12b40": [
+    "report_docvqa/images"
+  ],
+  "6b429232": [
+    "Multi-PageInvoiceDocumentVisualQuestionAnswering/images"
+  ],
+  "6d45c24e": [
+    "CartoonStoryTelling/images"
+  ],
+  "6d64fc09": [
+    "traffic_signs_detection/images"
+  ],
+  "6dcdb5c6": [
+    "BigCatImageRecognition/images"
+  ],
+  "6dee4bcd": [
+    "Multi-PageLetterDocumentVisualQuestionAnswering/images"
+  ],
+  "6dfdebdc": [
+    "pneumonia_diagnosis_vqa/images"
+  ],
+  "6e086618": [
+    "BookInformationVQA/images"
+  ],
   "6f1bd1c5": [
     "BirdDetection/images"
   ],
+  "6f5d5e83": [
+    "Face_Comparison_Visual_Question_Answering/images"
+  ],
+  "6fe0ca70": [
+    "Environment-BasedNext-actionDescription/images"
+  ],
+  "72fde3b9": [
+    "PillAnomalyDetection/annotations",
+    "PillAnomalyDetection/images"
+  ],
+  "740fce41": [
+    "Multi-PageMemoDocumentVisualQuestionAnswering/images"
+  ],
+  "74a04c14": [
+    "augmented-forest-segmentation/annotations",
+    "augmented-forest-segmentation/images"
+  ],
+  "75547d19": [
+    "MetalNutAnomalyDetection/annotations",
+    "MetalNutAnomalyDetection/images"
+  ],
+  "7634d491": [
+    "Before-AfterRelationshipCaption/images"
+  ],
+  "76992a36": [
+    "face_emotion_recognition/images"
+  ],
+  "77664332": [
+    "Abduction-basedVQA/images"
+  ],
+  "7818d8f2": [
+    "ComicPanelVQA/images"
+  ],
+  "782226f8": [
+    "cat-faces-detection/images"
+  ],
   "791bc8ca": [
     "chinese-fine-art/images"
+  ],
+  "7975369b": [
+    "football-player-detection/images"
+  ],
+  "79a3951a": [
+    "Multi-PagePosterDocumentVisualQuestionAnswering/images"
+  ],
+  "7cd47974": [
+    "image_editing_instruction_generation/source_images",
+    "image_editing_instruction_generation/target_images"
+  ],
+  "7d4059af": [
+    "WeedDetection/images"
+  ],
+  "7e688668": [
+    "ScrewAnomalyDetection/annotations",
+    "ScrewAnomalyDetection/images"
+  ],
+  "7ffc2943": [
+    "AnimalRecognition/images"
+  ],
+  "823c85b3": [
+    "pest-detection/images"
+  ],
+  "824f893d": [
+    "pet_face_expression_recognition/images"
+  ],
+  "85e075e5": [
+    "Image_Pair_Multi-Attribute_Question_Answering/images"
+  ],
+  "8a2c6ed9": [
+    "vehicle_semantic_segmentation/annotations",
+    "vehicle_semantic_segmentation/images"
+  ],
+  "8c73d04c": [
+    "strawberry_ripeness_recognition/images"
+  ],
+  "8f3d917e": [
+    "Latex Code Recognition/images"
+  ],
+  "90e148bd": [
+    "Multi-PageCertificateDocumentVisualQuestionAnswering/images"
+  ],
+  "9138f693": [
+    "tomato-detection/images"
+  ],
+  "9139b568": [
+    "Pose_and_Activity_Consistency_Verification/images"
   ],
   "9155fd9c": [
     "chemistry_vqa/images"
@@ -18,10 +397,304 @@
   "91f29c38": [
     "mathematical_word_problem_vqa/images"
   ],
+  "9271548f": [
+    "PropertyCoherenceReasoning/images"
+  ],
+  "93292b7f": [
+    "drone-detection/images"
+  ],
+  "9350c0c1": [
+    "MultimodalDecision-makingReasoning/images"
+  ],
+  "948f9397": [
+    "IndustrialInspectionMulti-ImageReasoning/images"
+  ],
+  "96bf1cea": [
+    "helmet-detection/images"
+  ],
+  "9778267f": [
+    "person-hair-matting/images",
+    "person-hair-matting/mask",
+    "person-hair-matting/sketch"
+  ],
+  "991382e5": [
+    "Multi-PageE-mailDocumentVisualQuestionAnswering/images"
+  ],
+  "9a39b90f": [
+    "tuberculosis_xray_segmentation/annotations",
+    "tuberculosis_xray_segmentation/images"
+  ],
+  "9a6fe6b5": [
+    "food-detection/images"
+  ],
+  "9bb7995c": [
+    "garbage_classification/images"
+  ],
+  "9c62dcd5": [
+    "Education-RelatedVQA/images"
+  ],
+  "9c7eae7d": [
+    "pedestrian_instance_segmentation/annotations",
+    "pedestrian_instance_segmentation/images"
+  ],
+  "9d48565d": [
+    "TextManipulationRegionMatting/images",
+    "TextManipulationRegionMatting/masks"
+  ],
+  "9d9df8a8": [
+    "TextManipulationClassification/images"
+  ],
+  "9e4eeb26": [
+    "HubmapOrganSegmentation/images",
+    "HubmapOrganSegmentation/masks"
+  ],
+  "9e64d7e5": [
+    "BrainTumorMRIRecognition/images"
+  ],
+  "9f01f2fe": [
+    "fruit_disease_recognition/images"
+  ],
+  "9fee1e09": [
+    "ToothbrushAnomalyDetection/annotations",
+    "ToothbrushAnomalyDetection/images"
+  ],
+  "a01af67a": [
+    "Multi-ImageVisualEntailmentReasoning/images"
+  ],
+  "a1e7d662": [
+    "lmage_Scene_Graph_Parsing/images"
+  ],
+  "a295f14b": [
+    "request_docvqa/images"
+  ],
+  "a32693ae": [
+    "exit-sign-detection/images"
+  ],
+  "a436be4c": [
+    "CableAnomalyDetection/annotations",
+    "CableAnomalyDetection/images"
+  ],
+  "a446aa4d": [
+    "COVID-19CTScanLesionSegmentation/images",
+    "COVID-19CTScanLesionSegmentation/masks"
+  ],
+  "a4898a7c": [
+    "LeatherAnomalyDetection/annotations",
+    "LeatherAnomalyDetection/images"
+  ],
   "a538c57a": [
     "lung_nodule_diagnosis_vqa/images"
   ],
+  "a7353dbe": [
+    "Description_of_Open-ended_Spatial_Relationship/images"
+  ],
+  "a7c8f047": [
+    "empty-shelf-detection/images"
+  ],
+  "aa077bb4": [
+    "instagram_image_caption/images"
+  ],
+  "aba793f0": [
+    "rgbd_semantic_segmentation/annotations",
+    "rgbd_semantic_segmentation/depths",
+    "rgbd_semantic_segmentation/images"
+  ],
+  "abcc59fd": [
+    "pedestrian_semantic_segmentation/annotations",
+    "pedestrian_semantic_segmentation/images"
+  ],
+  "ad7a8033": [
+    "SequentialStoryCompletion/images"
+  ],
   "b06e6da3": [
     "fall-human-detection/images"
+  ],
+  "b308a1dd": [
+    "handwriting-component-detection/images"
+  ],
+  "b472bf44": [
+    "Multi-PageFormDocumentVisualQuestionAnswering/images"
+  ],
+  "b4ca2652": [
+    "WoodAnomalyDetection/annotations",
+    "WoodAnomalyDetection/images"
+  ],
+  "b57a3ddc": [
+    "plant-disease-detection/images"
+  ],
+  "b5af696e": [
+    "yoga-pose-classification/images"
+  ],
+  "b66ceeca": [
+    "tree-detection/images"
+  ],
+  "b755c9f2": [
+    "ClothColorVisualQuestionAnswering/images"
+  ],
+  "b90cb392": [
+    "wound-detection/images"
+  ],
+  "ba51da81": [
+    "letter_and_number_ocr/images"
+  ],
+  "baa6b362": [
+    "Multi-PageInfographicDocumentVisualQuestionAnswering/images"
+  ],
+  "bfdd4599": [
+    "Radical-LevelOracleBoneCharacterRecognition/images"
+  ],
+  "c0bb6cfd": [
+    "rock-paper-scissors-gesture-detection/images"
+  ],
+  "c1b0111b": [
+    "Road_Semantic_Segmentation/annotations",
+    "Road_Semantic_Segmentation/images"
+  ],
+  "c42b0875": [
+    "underwater-garbage-detection/images"
+  ],
+  "c5241b0b": [
+    "Abnormal_Heartbeat_Patients/images"
+  ],
+  "c5aacf31": [
+    "sports_image_classification/images"
+  ],
+  "c69f6a03": [
+    "Object_Hallucination_Detection/images"
+  ],
+  "c6e1c456": [
+    "vegetable_recognition/images"
+  ],
+  "c82955c9": [
+    "DrivingRecordingReasoning/images"
+  ],
+  "cb61e914": [
+    "medical-device-detection/images"
+  ],
+  "ced2ef2c": [
+    "Multi-PageNewsDocumentVisualQuestionAnswering/images"
+  ],
+  "d0c0ac7e": [
+    "SurveillanceObject-LevelChangeDescription/images"
+  ],
+  "d1cebe7b": [
+    "portrait_matting/annotations",
+    "portrait_matting/images"
+  ],
+  "d26359b1": [
+    "dog_breeds recognition/images"
+  ],
+  "d29b12a8": [
+    "RecipeCompletion/images"
+  ],
+  "d3134714": [
+    "presentation_docvqa/images"
+  ],
+  "d4dc04ca": [
+    "skin_disease_diagnosis_vqa/images"
+  ],
+  "d53556d9": [
+    "AmericanSignLanguageRecognition/images"
+  ],
+  "d8ec6acb": [
+    "Internet-Retrieved-InformationVisualQuestionAnswering/images"
+  ],
+  "db5debc0": [
+    "Classification_of_Visual_Spatial_Relationship/images"
+  ],
+  "db61c995": [
+    "physics_vqa/images"
+  ],
+  "dd82e138": [
+    "GridAnomalyDetection/annotations",
+    "GridAnomalyDetection/images"
+  ],
+  "dd8eaf78": [
+    "FashionConceptVisualQuestionAnswering/images"
+  ],
+  "de8f8431": [
+    "mammal_recognition/images"
+  ],
+  "df6e8ebf": [
+    "Multi-PageOrderDocumentVisualQuestionAnswering/images"
+  ],
+  "e2361d8a": [
+    "waste-item-image-classification/images"
+  ],
+  "e48afc3b": [
+    "MultimodalSlideQuestionAnswering/images"
+  ],
+  "e7c8be03": [
+    "person_keypoint_detection/images"
+  ],
+  "e8438c67": [
+    "LungSegmentation/images",
+    "LungSegmentation/masks"
+  ],
+  "e867e3cf": [
+    "indoor_semantic_segmentation/annotations",
+    "indoor_semantic_segmentation/images"
+  ],
+  "e8842fa5": [
+    "remote_sense_vqa/images"
+  ],
+  "e8b7a0be": [
+    "TextbookDiagramVQA/images"
+  ],
+  "e948b4ed": [
+    "FinancialDialogueVQA/images"
+  ],
+  "e9b10356": [
+    "MultimodalDocumentVQA/images"
+  ],
+  "eb9e793b": [
+    "BirdVariationComparisonDescription/images"
+  ],
+  "ebe7ca80": [
+    "astronomy-image-captioning/images"
+  ],
+  "ec260faa": [
+    "Description_of_Single_Spatial_Relationship/images"
+  ],
+  "ec53869a": [
+    "gauge-detection/images"
+  ],
+  "eff9f1ae": [
+    "road_scene_panoptic_segmentation/annotations",
+    "road_scene_panoptic_segmentation/images"
+  ],
+  "f2735ac7": [
+    "price-tag-detection-and-text-grounding/images"
+  ],
+  "f3bfb40e": [
+    "TileAnomalyDetection/annotations",
+    "TileAnomalyDetection/images"
+  ],
+  "f3cd4d5e": [
+    "Attribute_Hallucination_Detection/images"
+  ],
+  "f4c4b784": [
+    "parking-space-detection/images"
+  ],
+  "f6c4e086": [
+    "EgocentricDailyTasksActionPlanning/images"
+  ],
+  "fae8bd7c": [
+    "Multi-PageMeetingDocumentVisualQuestionAnswering/images"
+  ],
+  "fb300c9a": [
+    "ComicDialogueCompletion/images"
+  ],
+  "fca832f7": [
+    "LeukemiaClassification/images"
+  ],
+  "fd6bf1ba": [
+    "small_object_detection/images"
+  ],
+  "feb0f5f2": [
+    "Text-Table-ImageJointReasoning/images"
+  ],
+  "ff2f3670": [
+    "Radar_Ship_Detection/images"
   ]
 }

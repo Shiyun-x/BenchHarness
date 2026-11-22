@@ -518,7 +518,7 @@ HARD RULES
 """
 
 
-def call_llm_for_dataset_card(ctx: Dict[str, Any], model: str = "gpt-5-mini", modality: str = "text") -> Dict[str, Any]:
+def call_llm_for_dataset_card(ctx: Dict[str, Any], model: str = "gpt-6.1-sol", modality: str = "text") -> Dict[str, Any]:
     system_prompt = DATASET_CARD_SYSTEM_PROMPT.strip()
     user_prompt = build_user_prompt_for_card(ctx, modality)
 
@@ -542,7 +542,7 @@ def build_single_card(
     json_path: str,
     tasks_yaml: str,
     scenario_yaml: str, 
-    model: str = "gpt-5-mini",
+    model: str = "gpt-6.1-sol",
     modality = "text",
 ) -> DatasetCard:
     raw = read_dataset_json(json_path)
@@ -681,7 +681,7 @@ def load_runtime_config(config_path: str) -> Dict[str, Any]:
             "out_dir": out_dir,
             "tasks_yaml": _resolve_config_file_path(build_cfg["tasks_yaml"], config_dir),
             "scenario_yaml": _resolve_config_file_path(build_cfg["scenario_yaml"], config_dir),
-            "model": build_cfg.get("model", "gpt-5.1"),
+            "model": build_cfg.get("model", "gpt-6.1-sol"),
             "max_workers": max_workers,
         },
         "path_types": {

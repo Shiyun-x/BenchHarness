@@ -6,13 +6,15 @@ from uuid import uuid4
 import random
 import threading
 import os
-from pydub import AudioSegment
+import copy
 # from TTS.api import TTS
 from functools import lru_cache
 
+from utils.audio_processing.library_paths import resolve_noise_root
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_DIR = str(_PROJECT_ROOT / "workspace" / "audio")
-NOISE_ROOT = os.getenv("NOISE_ROOT", str(_PROJECT_ROOT / "noise_library" / "TUT"))
+NOISE_ROOT = str(resolve_noise_root())
 
 # ================ XTTS Configuration ================
 
@@ -197,6 +199,7 @@ def _load_tut_noise_index(noise_root: str) -> Dict[str, List[Path]]:
 
 
 def _tile_or_trim(noise: AudioSegment, target_ms: int) -> AudioSegment:
+    from pydub import AudioSegment
     if len(noise) == 0:
         return AudioSegment.silent(duration=target_ms)
 
@@ -231,93 +234,73 @@ def _mix_with_snr(
 
 # ================ Tools Interface ================
 def text2speech(
-    dialog: List[Dict[str, Any]],
-    *args, **kwargs
-) -> str:
-    """
-    transfer text to speech using XTTS model
-    parameters
-    ----------
-        dialog: List of dict, each dict has keys:
-            "speaker": str|int, speaker identifier
-            "text": str, text content to synthesize
-            "language": str, language code (e.g. 'en', 'zh'), optional
-            "gender": str, 'male' | 'female' | 'auto', optional
-    returns
-        dict with keys:
-            "merged_audio_path": path to merged audio file (absolute path)
+    dialog: Optional[List[Dict[str, Any]]] = None,
+    *args, segments=None, **kwargs
+) -> Dict[str, Any]:
+    """Reserve independent segment paths; dialog remains a legacy compatibility input.
 
+    No speech model or API is invoked here. The executor retains dialog in tool
+    memory; MiniMax or XTTS delivery produces the WAV files after content acceptance.
     """
-    output_root =  OUTPUT_DIR
-    default_language = "en"
-    if not dialog or not isinstance(dialog, list):
-        raise ValueError("text2speech_tool: `dialog` must be a non-empty list")
-
-    output_root_path = Path(output_root)
+    from utils.audio_processing.audio_jobs import normalize_dialog, named_audio_plan
+    if segments is not None:
+        plan = named_audio_plan([{'kind': 'tts', 'segments': segments}])
+        root = Path(OUTPUT_DIR) / ('tts_' + uuid4().hex)
+        return {'status': 'pending', 'segments': [
+            {'id': s['id'], 'label': s['label'], 'audio_path': str((root / (s['id'] + '.wav')).resolve())}
+            for s in plan['segments']]}
+    dialog = normalize_dialog(dialog)
+    output_root_path = Path(OUTPUT_DIR)
     output_root_path.mkdir(parents=True, exist_ok=True)
 
-    
     final_name = f"tts_{uuid4().hex}.wav"
 
     final_path = output_root_path / final_name
 
-    # speakers_order: List[str] = []
-    # speaker_first_gender: Dict[str, Optional[str]] = {}
-
-    # for turn in dialog:
-    #     raw_spk = turn.get("speaker")
-    #     spk = str(raw_spk) if raw_spk is not None else "1"
-    #     if spk not in speakers_order:
-    #         speakers_order.append(spk)
-    #         speaker_first_gender[spk] = turn.get("gender")  # may be None
-
-    # speaker2voice: Dict[str, str] = {}
-    # for spk in speakers_order:
-    #     g = speaker_first_gender.get(spk)
-    #     speaker2voice[spk] = _pick_voice_for_gender(g)
-
-    # temp_dir = output_root_path / "chunks"
-    # temp_dir.mkdir(parents=True, exist_ok=True)
-
-    # full_audio = AudioSegment.silent(duration=0)
-    # last_speaker: Optional[str] = None
-
-    # for turn in dialog:
-    #     raw_spk = turn.get("speaker")
-    #     spk = str(raw_spk) if raw_spk is not None else "1"
-    #     txt = (turn.get("text") or "").strip()
-    #     if not txt:
-    #         continue
-
-    #     turn_lang = (turn.get("language") or default_language).lower()
-    #     voice_name = speaker2voice.get(spk) or _pick_voice_for_gender(turn.get("gender"))
-
-    #     chunk_name = f"chunk_{uuid4().hex}.wav"
-    #     chunk_path = temp_dir / chunk_name
-
-    #     _synthesize_segment(txt, turn_lang, voice_name, str(chunk_path))
-    #     seg = AudioSegment.from_wav(chunk_path)
-
-    #     if last_speaker is None:
-    #         pass
-    #     else:
-    #         if spk == last_speaker:
-    #             full_audio += AudioSegment.silent(duration=150)
-    #         else:
-    #             full_audio += AudioSegment.silent(duration=300)
-
-    #     full_audio += seg
-    #     try:
-    #         chunk_path.unlink(missing_ok=True)
-    #     except Exception:
-    #         pass
-    #     last_speaker = spk
-
-    # full_audio.export(final_path, format="wav")
-
-    return  {
+    return {
         "merged_audio_path": str(final_path.resolve()),
+        "segments": [{'id': turn['id'], 'audio_path': str(
+            (output_root_path / (final_name[:-4] + '_segments') / (turn['id'] + '.wav')).resolve())}
+            for turn in dialog],
+        "status": "pending",
     }
+
+
+def overlay_audio(segments, tracks=None, output_path=None, *, outputs=None):
+    """Schedule named outputs; legacy tracks/path calls render existing WAV files."""
+    if outputs is not None:
+        from utils.audio_processing.audio_jobs import (
+            safe_audio_id, validate_overlay, validate_noise, speaker_label,
+            validate_background_music, audio_effect_suffix)
+        ids = {s['id'] for s in segments}
+        by_id = {s['id']: s for s in segments}
+        seen = set()
+        if not isinstance(outputs, list) or not outputs:
+            raise ValueError('overlay_audio requires nonempty outputs')
+        root = Path(OUTPUT_DIR) / ('audio_' + uuid4().hex)
+        scheduled = []
+        for output in outputs:
+            if (not isinstance(output, dict) or set(output) - {'id', 'tracks', 'noise', 'background_music'} or
+                    not safe_audio_id(output.get('id')) or output['id'] in seen or output['id'] in ids):
+                raise ValueError('audio outputs require unique safe ids and tracks')
+            seen.add(output['id'])
+            validate_overlay(output.get('tracks'), ids, require_all=False)
+            validate_noise(output.get('noise'))
+            validate_background_music(output.get('background_music'))
+            tracks = copy.deepcopy(output['tracks'])
+            for index, track in enumerate(tracks):
+                segment = by_id[track['segment_id']]
+                following = by_id[tracks[index + 1]['segment_id']] if index + 1 < len(tracks) else None
+                pause = (150 if speaker_label(segment) == speaker_label(following) else 300) if following else 0
+                track.setdefault('pause_after_ms', segment.get('pause_after_ms', pause))
+            scheduled.append({**output, 'tracks': tracks,
+                              'output_path': str((root / (output['id'] + '.wav')).resolve())})
+            suffix = audio_effect_suffix(output)
+            if suffix:
+                scheduled[-1]['final_audio_path'] = str((root / (output['id'] + suffix + '.wav')).resolve())
+        return {'status': 'pending', 'outputs': scheduled}
+    from utils.audio_processing.audio_rendering import overlay_audio as render_overlay
+    return render_overlay(segments, tracks, output_path)
 
 
 def speech2text(
@@ -331,6 +314,20 @@ def speech2text(
     returns: transcribed text string
     """
     pass
+
+
+def add_background_music(audio_path: str, intensity: Optional[str] = None,
+                         speech_to_music_db: Optional[float] = None) -> Dict[str, Any]:
+    """Deferred interface only: reserve a path without loading music or audio.
+
+    Defaults to a 0 dB speech/music ratio. Actual selection and rendering live
+    in utils.audio_processing.add_music.
+    """
+    from utils.audio_processing.audio_jobs import background_music_settings
+    background_music_settings(intensity, speech_to_music_db)
+    source = Path(audio_path)
+    target = source.with_name(f'{source.stem}_music_{uuid4().hex[:8]}.wav')
+    return {'music_audio_path': str(target.resolve()), 'status': 'pending'}
 
 
 def add_environmental_noise(

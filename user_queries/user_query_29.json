@@ -1,0 +1,5 @@
+{
+  "id": "target_speaker_binding_under_continuous_music_v1",
+  "description": "I want to build a challenging speech-based benchmark that evaluates target-speaker tracking and information binding in multi-speaker conversations with continuous background music. A reference voice should identify the target speaker. Participants should take turns without overlapping speech, while background music remains audible throughout the conversation. Speakers should discuss similar entities and alternatives but contribute different facts, plans, relationships, or constraints. Questions should require recovering the target's statements and connecting evidence across nonadjacent turns, including relevant conditions or revisions. Plausible alternatives should arise from assigning another speaker's information to the target or attaching a condition or correction to the wrong person or statement. The correct answer should depend on which voice is identified as the target. The challenge should come from maintaining who said what under musical interference, with sufficient audible evidence and no clear later recap that gives away the required attribution.",
+  "target_size": 100
+}

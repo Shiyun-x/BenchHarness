@@ -1,0 +1,5 @@
+{
+  "id": "detail_question_answering_with_speech_v1",
+  "description": "I want to build a challenging benchmark of visual-detail question answering and evidence sufficiency. Questions should concern object identity, attributes, counts, spatial relationships, text, or visible states in a photograph or small set of views. Models should give a substantive answer when supported and select an explicit cannot-determine option otherwise. Include substantial answerable and unanswerable cases, distinguishing missing information from difficult but resolvable details based on actual visibility and delivered resolution, without wording cues to uncertainty. Every sample should include images, written material, and playable speech audio. Speech may ask or restate the question or provide everyday context; it need not contribute independent evidence and should not reveal hidden details or declare the image insufficient.",
+  "target_size": 100
+}

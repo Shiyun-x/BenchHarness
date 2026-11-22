@@ -41,7 +41,7 @@ def _load_transformed_buffer_from_file(cache_path: str, subtask_id: str) -> Dict
 
 @register_tool("iterative_transform_batch")
 def iterative_transform_batch(
-    max_workers: int = 24,
+    max_workers: int = 4,
     context_variables: Optional[Dict[str, Any]] = None,
     cache_root: Optional[str] = None,
 ) -> Result:
@@ -92,6 +92,10 @@ def iterative_transform_batch(
         print(f"[iterative_transform_batch] no_op: missing dataset_cards")
         return ctx
 
+    if ctx.get('generation_mode', 'legacy') == 'planned':
+        from benchHarness.executor.planned_generation import planned_transform_batch
+        return planned_transform_batch(ctx, cache_root, max_workers)
+
     # --- Iterative transform ---
     model_config_path = ctx.get("model_config_path")
     current_pairs, transformed_buffer, payload = transform_samples_iterative(
@@ -128,4 +132,3 @@ def iterative_transform_batch(
     }
     
     return ctx
-    

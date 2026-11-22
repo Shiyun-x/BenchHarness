@@ -18,7 +18,7 @@ def _get_refinement_model(model_config_path=None):
     try:
         return get_tool_model("analyst_model", model_config_path)
     except Exception:
-        return "gpt-5.1"
+        return "gpt-6.1-sol"
 
 
 def _as_list_str(v) -> List[str]:
@@ -69,7 +69,9 @@ def _normalize_field_spec(fs: Any) -> Dict[str, Any]:
         out["type"] = "str"
     if out["dtype"] not in ("audio", "text", "image"):
         out["dtype"] = out["dtype"] or ""
-    if out["type"] not in ("str", "list"):
+    if out["dtype"] in ("image", "audio"):
+        out["type"] = "str|list"
+    elif out["type"] not in ("str", "list"):
         out["type"] = "str"
     return out
 
@@ -126,24 +128,19 @@ def _normalize_subtask(st: Dict[str, Any], global_modalities: List = None) -> Di
 
 
 _REVISE_PROMPT = r"""
-You are revising ONE benchmark subtask. The **designer's instruction** below is the main directive—apply it to the given subtask. Your job is to produce the revised subtask that matches what the designer asked for.
+Revise ONE benchmark subtask to address the designer's stated defect and intended change. Preserve the evaluation goal and unchanged parts; do not weaken the capability to obtain easier datasets or a more convenient answer format. Keep description concise about WHAT is tested; do not prescribe a sample-generation recipe or fixed sentence count.
 
-Designer's guidance:
+Define each subtask as an individual input-to-answer task; comparisons across samples are outside the subtask requirements.
+
+Designer guidance:
 {guidance}
 
-Current subtask (JSON):
+Current subtask:
 {subtask_json}
 
-Context: allowed modalities for this benchmark: {global_modalities}; retrieval keywords: {keywords}. You may use these to inform the revision only if the guidance implies it.
+Scope context: modalities={global_modalities}; retrieval keywords={keywords}. Preserve explicit modality requirements; keywords guide retrieval rather than overriding the task's capability.
 
-Rules:
-- Output a single JSON object with exactly these fields: "id", "name", "description", "answer_type", "modalities", "sample_schema", "keywords".
-- Keep "id" unchanged. Preserve the evaluation intent and use answer_type in {{binary, choice, label, span}}.
-- Keep the sample schema simple: input is "question" plus optional "context" and/or one modality URL ("audio_url", "image_url"); output must contain only "answer".
-- Prefer answer_type="choice" when it fits. Put choices inside the question or compact context, not in a separate "candidates" or "options" field.
-- Do not add fields such as "evidence", "supporting_turns", "answer_id", "rationale", "label", or "explanation".
-- Change only what the guidance asks for; leave the rest intact unless the guidance implies otherwise.
-- Return ONLY the JSON object; no extra text or markdown.
+Return only one valid JSON object with exactly id, name, description, answer_type, modalities, sample_schema, keywords. Keep id unchanged. Use answer_type binary/choice/label/span; retain the current format unless the guidance warrants a change. Schema simplicity concerns fields, not task difficulty: input requires question, optionally context/image_url/audio_url when needed; output contains only answer. Field dtype is text/image/audio. Image and audio fields use str|list for one path or a path list; other types are str/list. Answer is text/str, with subtype yes_no/multiple_choice/multi_class/extractive_span matching the answer type. Choice options belong in question, not context or a separate options field. Do not add evidence, rationale, explanation, candidates or supporting_turns fields. Keep media perception necessary where required. Do not generate a sample, commentary or Markdown fences.
 """
 
 @register_tool("llm_revise_one_subtask")
@@ -175,13 +172,15 @@ def llm_revise_one_subtask(
         subtask_json=json.dumps(st, ensure_ascii=False, indent=2),
         global_modalities=json.dumps(_as_list_str(global_modalities), ensure_ascii=False),
         keywords=json.dumps(_as_list_str(keywords), ensure_ascii=False),
-        guidance=(guidance or "").strip() or "Make the subtask easier to match real datasets without changing the intent.",
+        guidance=(guidance or "").strip() or "Clarify the subtask's tested capability and schema while preserving its evaluation intent.",
     )
-    resp = llm_call_json(system_prompt="", user_prompt=prompt, model=model)
+    resp = llm_call_json(system_prompt="", user_prompt=prompt, model=model,
+                         model_config_path=model_config_path)
     if not resp.get("ok"):
         raise RuntimeError(f"[llm_revise_one_subtask] JSON parse failed: {resp.get('error')}")
     revised_raw = resp.get("json") or {}
     revised = _normalize_subtask(revised_raw, global_modalities=global_modalities)
+    revised["id"] = subtask_id
     old = next((s for s in full_subtasks if (s.get("id") or "").strip() == subtask_id), None)
     merged = dict(old or {})
     merged.update(revised)

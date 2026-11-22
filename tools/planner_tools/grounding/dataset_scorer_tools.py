@@ -269,7 +269,7 @@ Constraints:
 A dataset may be classified as: "A", "B", or "either".
 
 ==================== Transformability Principles ====================
-High recall is preferred. Prefer direct derivation from original data or metadata, but also accept transformations that create new evaluation information through controlled synthesis (e.g., new perspectives, disagreements, choice labels, scenarios, or queried claims) when the synthesis is compatible with the dataset meta and does not contradict preserved facts. The dataset meta provides factual invariants and usable resources; it does not need to already contain the exact target task format. The answer does not need to be explicitly stored in the source dataset if the transformation pipeline can define it in a controlled, self-consistent, and verifiable way. **External knowledge:** whenever **factual** world or domain knowledge (often specialized or professional) would improve grounding, disambiguate entities, enrich a transformed sample, or yield clearer evaluation signal, **favor** including `web_search` as a grounded retrieval step—treat it as a normal complement to the dataset, not a last resort—before marking a candidate infeasible. Use it only for **verifiable facts** from credible sources (not opinions, speculation, or subjective takes). Retrieved fact evidence is acceptable grounding for objective answers (e.g., entity, artwork, historical, cultural, geographic, temporal, scientific, biographical, clinical or technical definitions). **Image-grounded search:** when the sample modality includes **images**, treat **vision-first `web_search`** (same image passed as `image_paths` at execution, plus a precise text `query`) as a normal, encouraged way to pull **factual** evidence (identity, taxonomy, location, era, equipment, diagnosis-related public facts, etc.)—do not default to text-only anchors if the picture is the strongest signal. Mark no only when even a controlled synthetic construction and available tool use (including web_search) would be unsupported, contradictory to the data/meta, impossible for the available modality/fields, or too subjective/brittle to verify.
+High recall is preferred. Prefer direct derivation from original data or metadata, but also accept transformations that create new evaluation information through controlled synthesis (e.g., new perspectives, disagreements, choice labels, scenarios, or queried claims) when the synthesis is compatible with the dataset meta and does not contradict preserved facts. The dataset meta provides factual invariants and usable resources; it does not need to already contain the exact target task format. The answer does not need to be explicitly stored in the source dataset if the transformation pipeline can define it in a controlled, self-consistent, and verifiable way. External factual needs may be noted as conditions for Generator Proposal's native retrieval. Retrieval has not happened at Grounding time; do not treat expected results as established facts or reject a candidate solely because the card omits a verifiable external fact. Mark no only when source-grounded reasoning, controlled construction and supported capabilities cannot produce a valid target sample.
 
 ==================== Tools ====================
 [LLM Operations - Very Flexible]
@@ -302,28 +302,18 @@ Pure tools operate on concrete assets (audio/image/etc).
 - PURE tools are trusted resource producers. Their target_fields MUST contain exactly one stable memory base path:
   `tool_memory.<pure_tool_name>.<operation_key>`
   where operation_key is a short, stable snake_case name describing this tool use (for example:
-  `tool_memory.web_search.identify_artist`, `tool_memory.text2speech.dialog_audio`).
+  `tool_memory.text2speech.dialog_audio`, `tool_memory.add_environmental_noise.noisy_audio`).
 - PURE tools MUST NOT target interim.* or final.*. The executor will write:
   - `<memory_base>.input`  = concrete tool_args used at sample execution time
   - `<memory_base>.output` = the backend tool result
-- Concrete tool_args (query text, image_paths, etc.) are planned later at **sample** execution time, but **dataset-level** `resource_fields` is still REQUIRED now: it must list every `original.*` (and later `tool_memory.*` / `interim.*`) path the pure-tool planner will need to read from the sample to build those args. Never use `resource_fields: []` for a real PURE tool step (cleanup-only is the only exception).
+- Concrete tool_args (dialogue turns, audio paths, etc.) are planned later at **sample** execution time, but **dataset-level** `resource_fields` is still REQUIRED now: it must list every `original.*` (and later `tool_memory.*` / `interim.*`) path the pure-tool planner will need to read from the sample to build those args. Never use `resource_fields: []` for a real PURE tool step (cleanup-only is the only exception).
 
-[External Knowledge via web_search]
-- **Encouraged use:** Include the PURE tool `web_search` whenever **external factual** knowledge—typically verifiable, often **domain-specialized or professional** (medicine, STEM, law, finance, arts catalogues, standards, named entities, dates, taxonomy, etc.)—would strengthen the pipeline, unlock new **insights for sample transformation** (richer questions, correct labels, disambiguation, standard terminology), or fill gaps not fully spelled out in the dataset. You do not need to wait for a hard "blocker"; if credible search-backed facts would clearly help, plan `web_search`.
-- **Fact-only constraint:** Retrieved content must be used as **objective, checkable fact**. Do not rely on `web_search` for opinions, rumors, taste, or other non-factual material. Prefer sources and queries that yield stable professional or encyclopedic facts.
-- Treat `web_search` as a reliable retrieval tool for **fact-type** evidence when the query can be grounded in sample resources (text labels, entities, titles, metadata, **and/or images**) and the later LLM step can cite/consume the retrieved evidence.
-- **Use images well (`image_paths`):** whenever the pipeline reads **sample images** (`original.input.*` image paths), **prefer** planning `web_search` so execution can attach those same paths as `image_paths` alongside a focused `query`—use the pixels to retrieve **facts** (what/where/when/who/which standard term), not only when text metadata is missing. Visual search is encouraged for species, landmarks, artworks, products, instruments, charts/screenshots, satellite or medical-style imagery (public-reference-level facts), etc., as long as results stay **verifiable factual** evidence tied to the depicted content.
-- `web_search` supports image inputs: at sample level, the pure-tool planner **should** pass `image_paths` when any **factual** lookup would benefit from the actual image (identity, attribution, fine-grained category, geographic or temporal anchoring from visuals), not only for "artwork identity" edge cases.
-- For image datasets, do not mark a candidate "no" merely because the dataset lacks text metadata if the image itself can be supplied to `web_search` and the subtask can be grounded by retrieved evidence plus preserved sample resources.
-- **Avoid redundancy:** Do NOT use `web_search` when the needed information is already fully and unambiguously present in original fields/meta with nothing factual left to add.
-- A `web_search` operation should write to a stable memory base such as
-  `tool_memory.web_search.identify_artist` or `tool_memory.web_search.retrieve_biography_fact`.
-- Later LLM operations that consume web_search evidence MUST include the concrete memory output path in resource_fields, for example:
-  `tool_memory.web_search.identify_artist.output.answer`.
-  Mentioning tool_memory in notes is NOT sufficient; if an LLM step depends on PURE output, the corresponding `tool_memory.*.input.*` or `tool_memory.*.output.*` path MUST appear in resource_fields.
-- Do NOT include `params` for `web_search` in this transformability plan. At sample level, the pure-tool planner will generate the concrete `query` and optional `image_paths` (whenever image-grounded fact retrieval helps).
-- **INVALID:** `web_search` with `resource_fields: []`. You must list at least one anchor from the dataset card `meta_structure`, e.g. `original.input.<path>` for the primary image field (when the task is image-grounded) and any text fields (title, artist name, caption) that the search should ground on—use real paths from `meta_structure[role].paths`, prefixed with `original.` as in the schema section below. **If the sample uses an image, include that image path in `resource_fields`** so the executor can pass it as `image_paths` for fact search, unless the search is strictly text-only and the image adds no factual anchor.
-
+[External Knowledge: native Proposal retrieval]
+- Generator Proposal may retrieve verifiable external facts through native search when useful; it does not execute a dataset-level PURE search operation.
+- Describe material-specific external factual needs and their source anchors in transformability_notes. Do not emit web_search operations or tool_memory.web_search dependencies.
+- Expected retrieval is not existing evidence. Preserve uncertainty until the sample-level Proposal has obtained useful support.
+- Do not prescribe search queries, image_paths, unsupported image-search capabilities or guaranteed retrieval results. Trusted original facts and correct QA do not require redundant lookup.
+- Retrieved evidence supports internal authoring and need not appear as citations in the final evaluation QA.
 
 ==================== Operation Design ====================
 - Operations are minimal representation edits, each modifying one dimension.
@@ -428,7 +418,7 @@ Each item:
 [Output Constraints]
 - PURE tool names must match existing Pure tools exactly (cannot invent new names)
 - Each PURE tool can only be used once per pipeline
-- PURE steps (except cleanup_interim_fields) MUST have non-empty `resource_fields` listing real `original.*` / `tool_memory.*` / `interim.*` paths as required by the schema above; never emit `resource_fields: []` for `web_search`.
+- PURE steps (except cleanup_interim_fields) MUST have non-empty `resource_fields` listing real `original.*` / `tool_memory.*` / `interim.*` paths as required by the schema above.
 - Do NOT include `params`, `tool_args`, or concrete pure-tool invocation payloads in required_operations.
 - LLM operation names must be short (3-6 words or snake_case)
 - Operations must form a coherent pipeline
@@ -467,7 +457,8 @@ def _build_tools_list_json(tools_payload: Any) -> List[Dict[str, Any]]:
         description = str(t.get("description") or "").strip()
         params = str(t.get("params") or "")
         # typical_uses = str(t.get("typical_uses") or "").strip()
-        if name:
+        # Also exclude entries restored from older cached tool catalogs.
+        if name and name != "web_search":
             out.append({"name": name, "description": description, "params": params})
     return out
 
@@ -841,11 +832,9 @@ Rules:
 - Keep notes short and concrete.
 - Refer to transformability_notes when assessing risk and task_alignment.
 - Do not penalize a plan merely because it requires reliable reasoning over dataset-supported facts; penalize only if the reasoning is brittle, subjective, or unsupported.
-- A plan using `web_search` can be high-quality when **factual** external knowledge—often specialized or professional—complements the dataset, adds grounded insight for sample transformation, or fills factual gaps the card does not spell out.
-- Treat credible `web_search` evidence as strong grounding for **objective fact-type** use (entities, artwork, history/culture, geography/time, biographies, relationships, clinical or technical definitions, standards, taxonomy, and other verifiable information). Downgrade if search is used for non-factual or speculative content.
-- `web_search` supports optional image inputs (`image_paths`) at sample execution time. **Reward** plans that attach **sample images** when retrieval of **factual** evidence is plausibly better with pixels (identity, fine-grained class, place/object recognition, chart/diagram reading supported by public facts). Penalize text-only `web_search` when the card clearly provides images that would materially improve grounded fact retrieval but the plan omits them from the evidence path.
-- Penalize `web_search` when it is redundant with dataset fields/meta, vague or unverifiable, or used to smuggle non-factual or subjective content instead of stable facts.
-- Prefer plans where `web_search` targets `tool_memory.web_search.<operation_key>` and later LLM steps consume `tool_memory.*.output.*` (or needed `.input.*`) under leakage constraints.
+- External factual needs can be addressed by Generator Proposal's native retrieval; they are not PURE operations in this plan.
+- Judge the concrete factual need and whether the route can remain source-grounded. Planned retrieval is not already verified evidence.
+- Do not require a web_search operation, tool_memory.web_search paths or particular search arguments. Do not penalize their absence.
 
 ==================== Output ====================
 Return ONLY valid JSON:(LIST)

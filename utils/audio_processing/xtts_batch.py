@@ -8,6 +8,14 @@ import argparse
 import multiprocessing as mp
 import math
 import os
+import sys
+
+if __package__ in (None, ''):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from utils.audio_processing.audio_jobs import normalize_dialog
+from utils.audio_processing.audio_rendering import render_audio, overlay_audio
+from utils.audio_processing.audio_receipts import write_receipt, check_receipt
 
 import torch
 from pydub import AudioSegment
@@ -101,6 +109,9 @@ def text2speech_single(
     dialog: List[Dict[str, Any]],
     output_path: str,
     default_language: str = "en",
+    segments: Optional[List[Dict[str, Any]]] = None,
+    reuse_existing: bool = True,
+    assemble: bool = True,
 ) -> Dict[str, Any]:
     """
     Synthesize one dialog to a single wav at output_path.
@@ -109,7 +120,10 @@ def text2speech_single(
     """
     final = Path(output_path)
     try:
-        if final.exists():
+        dialog = normalize_dialog(dialog)
+        segment_dir = final.parent / (final.stem + '_segments')
+        paths = {s['id']: s['audio_path'] for s in (segments or [])}
+        if assemble and reuse_existing and final.exists() and (not segments or all(Path(s['audio_path']).is_file() for s in segments)):
             size = final.stat().st_size
             if size > 1024:
                 return {"merged_audio_path": str(final.resolve()), "status": "exists"}
@@ -125,40 +139,32 @@ def text2speech_single(
         speakers: List[str] = []
         genders: Dict[str, Optional[str]] = {}
         for turn in dialog:
-            spk = str(turn.get("speaker") or "1")
+            spk = str(turn.get('label', turn.get("speaker") or "1"))
             if spk not in speakers:
                 speakers.append(spk)
                 genders[spk] = turn.get("gender")
 
         spk2voice = {spk: _pick_voice_for_gender(genders.get(spk)) for spk in speakers}
 
-        tmp = final.parent / "chunks"
-        tmp.mkdir(parents=True, exist_ok=True)
-
-        full = AudioSegment.silent(duration=0)
-        last = None
-
-        for turn in dialog:
+        rendered = []
+        for index, turn in enumerate(dialog):
             txt = (turn.get("text") or "").strip()
             if not txt:
                 continue
 
-            spk = str(turn.get("speaker") or "1")
+            spk = str(turn.get('label', turn.get("speaker") or "1"))
             lang = (turn.get("language") or default_language).lower()
             voice = spk2voice[spk]
 
-            chunk = tmp / f"{uuid4().hex}.wav"
+            chunk = Path(paths.get(turn['id'], str(segment_dir / (turn['id'] + '.wav'))))
             _synthesize_segment(txt, lang, voice, chunk)
-            seg = AudioSegment.from_wav(chunk)
+            following = dialog[index + 1] if index + 1 < len(dialog) else None
+            pause = (150 if spk == str(following.get('label', following.get('speaker') or '1')) else 300) if following else 0
+            rendered.append({'id': turn['id'], 'audio_path': str(chunk),
+                             'pause_after_ms': turn.get('pause_after_ms', pause)})
 
-            if last is not None:
-                full += AudioSegment.silent(duration=150 if spk == last else 300)
-
-            full += seg
-            last = spk
-            chunk.unlink(missing_ok=True)
-
-        full.export(final, format="wav")
+        if assemble:
+            render_audio(rendered, final)
         return {"merged_audio_path": str(final.resolve()), "status": "generated"}
     except Exception as e:
         print(f"[ERROR][PID {mp.current_process().pid}] Exception during TTS: {e}")
@@ -175,7 +181,28 @@ def _process_one(args: Tuple[Dict[str, Any], str]) -> Dict[str, Any]:
     if not dialog or not isinstance(dialog, list) or not out or not isinstance(out, str):
         return {"merged_audio_path": None, "status": "invalid"}
 
-    return text2speech_single(dialog, out, default_language=default_language)
+    reuse = True
+    try:
+        check_receipt(item['record'], out)
+    except (OSError, ValueError):
+        reuse = False
+    result = text2speech_single(dialog, out, default_language=default_language,
+                               segments=item.get('segments'), reuse_existing=reuse,
+                               assemble='_speech_segments' not in item['record'])
+    if '_speech_segments' in item['record']:
+        if result.get('status') != 'invalid':
+            from utils.audio_processing.overlay_batch import overlay_record
+            for segment in item['segments']:
+                write_receipt(item['record'], segment['audio_path'])
+            overlay_record(item['record'])
+        return result
+    if result.get('status') != 'invalid':
+        write_receipt(item['record'], out)
+    if result.get('status') != 'invalid' and item.get('overlay'):
+        job = item['overlay']
+        overlay_audio(job['segments'], job['tracks'], job['output_path'])
+        write_receipt(item['record'], job['output_path'])
+    return result
 
 
 # ================= CLI =================
@@ -203,8 +230,10 @@ def main():
 
     items: List[Dict[str, Any]] = []
     for i, record in enumerate(records):
-        transcript = record.get("_transcript")
+        transcript = record.get('_speech_segments', record.get("_transcript"))
         out_path = record.get("_tts_output_path")
+        if '_speech_segments' in record and record.get('_tts_segments'):
+            out_path = str(Path(record['_tts_segments'][0]['audio_path']).parent / '_xtts.wav')
         # TTS-only records may lack _tts_output_path; fall back to sample.input.audio_url
         if not out_path and not record.get("_add_environmental_noise_args"):
             out_path = ((record.get("sample") or {}).get("input") or {}).get("audio_url")
@@ -214,6 +243,9 @@ def main():
             "record_idx": i,
             "dialog": transcript,
             "output_path": out_path,
+            "segments": record.get('_tts_segments'),
+            "overlay": record.get('_overlay_audio_args'),
+            "record": record,
         })
 
     if not items:

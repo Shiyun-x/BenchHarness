@@ -105,7 +105,7 @@ def _messages_to_design_agent_history(
 
 class Agent(BaseModel):
     name: str = "Agent"
-    model: str = "gpt-5-mini"
+    model: str = "gpt-6.1-sol"
     instructions: Union[str, Callable[[], str]] = "You are a helpful agent."
     functions: List[AgentFunction] = []
     tool_choice: str = None

@@ -1,0 +1,40 @@
+{
+  "base_url": "https://api.minimax.cn/v1",
+  "model": "speech-2.8-turbo",
+  "sample_rate": 32000,
+  "audio_format": "flac",
+  "default_language": "en",
+  "default_voice_id": "English_Diligent_Man",
+  "speaker_voices": {},
+  "voice_assignment_seed": 20261106,
+  "voice_pools": {
+    "female": [
+      "English_Graceful_Lady",
+      "Charming_Lady",
+      "Serene_Woman",
+      "Sweet_Girl",
+      "Attractive_Girl"
+    ],
+    "male": [
+      "English_Diligent_Man",
+      "English_Gentle-voiced_man",
+      "English_Aussie_Bloke",
+      "English_Trustworthy_Man"
+    ],
+    "auto": [
+      "English_Graceful_Lady",
+      "English_Diligent_Man",
+      "Charming_Lady",
+      "English_Gentle-voiced_man",
+      "Serene_Woman",
+      "English_Aussie_Bloke",
+      "Sweet_Girl",
+      "Attractive_Girl",
+      "English_Trustworthy_Man"
+    ]
+  },
+  "voice_defaults": {"speed": 1.1, "vol": 1, "pitch": 0},
+  "timeout_s": 120,
+  "concurrency": 20,
+  "rpm": 20
+}

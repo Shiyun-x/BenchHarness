@@ -10,13 +10,19 @@ import re
 
 from utils.registry import register_tool
 from utils.agent_utils import Result
-from tools.planner_tools.grounding.dataset_preference_tools import plan_dataset_preference
+from tools.planner_tools.grounding.dataset_preference_tools import (
+    plan_dataset_preference, normalize_dataset_preference,
+)
 from tools.planner_tools.grounding.dataset_retriever_tools import retrieve_candidates
 from tools.planner_tools.grounding.dataset_scorer_tools import transformability_check, scoring
 from tools.planner_tools.design.subtask_refinement_tools import _upsert_subtask
 
 
 # ---------- 1) Dataset Preference and Search ----------
+
+# All later plans depend on which candidates were retrieved and selected.
+# Keep old stage files intact without replaying them into the revised pipeline.
+GROUNDING_CACHE_VERSION = "candidate-v5"
 
 def _safe_id(text: str, fallback: str = "unknown") -> str:
     """Sanitize an identifier (e.g., subtask_id/topic_id) for filenames."""
@@ -29,14 +35,38 @@ def _labels_from_card(card: Dict[str, Any]) -> Dict[str, Any]:
     """Build a short label dict for the agent to decide which datasets to select."""
     if not card or not isinstance(card, dict):
         return {}
-    # Keep full description text to avoid losing important details for selection.
     desc = (card.get("description") or card.get("card_text") or "")
-    return {
+    labels = {
         "modalities": card.get("modalities") or [],
         "tasks": card.get("tasks") or [],
         "domain": card.get("domain") or "",
-        "description_snippet": desc.strip(),
+        "description_snippet": desc.strip()[:500],
     }
+    meta = card.get("meta") or {}
+    structure = meta.get("meta_structure_description")
+    if isinstance(structure, str) and structure.strip():
+        labels["material_structure"] = structure.strip()[:450]
+    fields = meta.get("fields") or {}
+    materials = {}
+    # Put content and supervision before generic QA wrappers in the short view.
+    priorities = ("context", "dialog", "image", "audio", "table", "entity", "rationale",
+                  "span", "bbox", "mask", "point", "category", "question", "answer", "options")
+    for role in priorities:
+        info = fields.get(role)
+        if not isinstance(info, dict):
+            continue
+        summary = {}
+        for key in ("semantics", "style", "content_extent"):
+            value = info.get(key)
+            if isinstance(value, str) and value.strip():
+                summary[key] = value.strip()[:180]
+        if summary:
+            materials[role] = summary
+        if len(materials) >= 6:
+            break
+    if materials:
+        labels["available_material"] = materials
+    return labels
 
 
 def _safe_subtask_name(st: Dict[str, Any], fallback_id: str = "") -> str:
@@ -77,24 +107,24 @@ def preference_construction(
         if use_stage_cache and os.path.exists(cache_path):
             try:
                 with open(cache_path, "r", encoding="utf-8") as f:
-                    ds_pref = json.load(f)
+                    ds_pref = normalize_dataset_preference(json.load(f))
                 st["dataset_preference"] = ds_pref
                 updated += 1
                 continue
-            except (json.JSONDecodeError, IOError):
+            except (ValueError, IOError):
                 os.remove(cache_path)
         elif use_stage_cache and os.path.exists(legacy_cache_path):
             # Backward-compat: load old filename (no subtask_id prefix), and migrate to new name.
             try:
                 with open(legacy_cache_path, "r", encoding="utf-8") as f:
-                    ds_pref = json.load(f)
+                    ds_pref = normalize_dataset_preference(json.load(f))
                 st["dataset_preference"] = ds_pref
                 os.makedirs(os.path.dirname(cache_path), exist_ok=True)
                 with open(cache_path, "w", encoding="utf-8") as f:
                     json.dump(ds_pref, f, ensure_ascii=False, indent=2)
                 updated += 1
                 continue
-            except (json.JSONDecodeError, IOError):
+            except (ValueError, IOError):
                 try:
                     os.remove(legacy_cache_path)
                 except OSError:
@@ -430,14 +460,14 @@ def _grounding_cache_path(ctx: Dict, stage: str, subtask_id: str, subtask_name_s
     cache_root = ctx.get("cache_root") or ctx.get("cache_path") or "cache"
     stage_safe = _safe_id(stage, "stage")
     sid_safe = _safe_id(subtask_id, "unknown_subtask")
-    return os.path.join(cache_root, "score_cache", stage_safe, f"{sid_safe}_{stage_safe}_{subtask_name_safe}.json")
+    return os.path.join(cache_root, "score_cache", GROUNDING_CACHE_VERSION, stage_safe, f"{sid_safe}_{stage_safe}_{subtask_name_safe}.json")
 
 
 def _legacy_grounding_cache_path(ctx: Dict, stage: str, subtask_name_safe: str) -> str:
     """Previous cache filename format (no subtask_id prefix). Kept for backward compat."""
     cache_root = ctx.get("cache_root") or ctx.get("cache_path") or "cache"
     stage_safe = _safe_id(stage, "stage")
-    return os.path.join(cache_root, "score_cache", stage_safe, f"{stage_safe}_{subtask_name_safe}.json")
+    return os.path.join(cache_root, "score_cache", GROUNDING_CACHE_VERSION, stage_safe, f"{stage_safe}_{subtask_name_safe}.json")
 
 
 def _filter_retrieval_by_selected(subtask: Dict[str, Any]) -> tuple:

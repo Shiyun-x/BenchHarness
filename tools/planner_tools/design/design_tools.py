@@ -121,6 +121,7 @@ def proposer(
         description=description,
         target_size=target_size,
         model=model,
+        model_config_path=model_config_path,
         modalities=modalities if modalities else None,
         keywords=keywords if keywords else None,
         short_topic=short_topic if short_topic != "benchmark" else None,

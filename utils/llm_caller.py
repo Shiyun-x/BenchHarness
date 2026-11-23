@@ -29,7 +29,7 @@ try:
 except Exception:
     DEFAULT_MODEL = "gpt-6.1-sol"
     def get_api_key(_config_path=None):
-        return os.getenv("LLM_API_KEY", "")
+        return os.getenv("YOUR_LLM_API_KEY_ENV", "")
     def get_api_base_url(_config_path=None):
         return None
 

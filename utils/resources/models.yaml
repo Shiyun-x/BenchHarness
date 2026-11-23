@@ -3,8 +3,8 @@
 
 # Unified gateway credentials are read from the environment at runtime.
 api:
-  api_key_env: "XINGSHU_API"
-  base_url: "https://llm-gateway.astrabot.cn/v1"
+  api_key_env: "YOUR_LLM_API_KEY_ENV"
+  base_url: "https://your-llm-gateway.example/v1"
 
 # Agent Models (used by Agent instances for decision-making)
 agents:

@@ -311,7 +311,7 @@ def process_speaker_records(records, config, api_key, *, concurrency=None, dry_r
                 on_record(index, result)
         return results
     if not api_key:
-        raise ValueError('set MINIMAX_API_KEY before synthesis')
+        raise ValueError('Set the speech API key before synthesis.')
     jobs, paths = {}, {}
     for index, groups in enumerate(groups_by_record):
         for group in groups:

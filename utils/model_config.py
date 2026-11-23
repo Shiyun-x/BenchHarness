@@ -170,7 +170,7 @@ def _windows_environment_variable(name: str) -> str:
 
 def get_api_key(config_path: Optional[str] = None) -> str:
     """
-    Read the configured key environment variable, or legacy config/LLM_API_KEY.
+    Read the configured key environment variable, or the default key setting.
 
     On Windows, a variable absent from the process is read from persisted user
     and system settings. An explicit process value (including empty) takes priority.
@@ -204,15 +204,21 @@ def get_api_key(config_path: Optional[str] = None) -> str:
                 "Set it in the process environment or Windows user/system environment."
             )
         return key
-    key = api.get("api_key") or os.getenv("LLM_API_KEY", "")
+    key = api.get("api_key") or os.getenv("YOUR_LLM_API_KEY_ENV", "")
     return (key if isinstance(key, str) else "") or ""
 
 
 def get_api_base_url(config_path: Optional[str] = None) -> str:
     """
-    Get API base URL from config file, else from environment LLM_API_BASE_URL.
+    Get the API base URL from the configuration or its environment override.
     """
     config = load_model_config(config_path)
     api = config.get("api") or {}
-    url = api.get("base_url") or os.getenv('LLM_API_BASE_URL', '')
+    placeholder = "https://your-llm-gateway.example/v1"
+    configured_url = api.get("base_url")
+    url = configured_url
+    if not configured_url or configured_url == placeholder:
+        url = os.getenv("YOUR_LLM_BASE_URL_ENV", "").strip()
+    if url == placeholder or (configured_url == placeholder and not url):
+        raise ValueError("Set api.base_url to your model API base URL before generation.")
     return (url if isinstance(url, str) else "")

@@ -64,7 +64,10 @@ python -m pip install -e .
 
 ### Configuration
 
-Use [utils/resources/models.yaml](utils/resources/models.yaml) as the model configuration. Set `api.base_url` to your provider endpoint and `api.api_key_env` to the name of the environment variable containing your API key. Set that variable in your shell and choose models available through your endpoint for the roles under `agents` and `tools`. Use `--model_config_path` to select a separate configuration.
+- **Models.** Configure `api.base_url`, `api.api_key_env`, and the model names in a local copy of [models.yaml](utils/resources/models.yaml). Pass it with `--model_config_path`.
+- **Speech.** Configure `base_url` and `api_key_env` in a local copy of [minimax_voices.json](utils/resources/minimax_voices.json). Pass it with `--config`.
+
+Set the selected key environment variables in your shell.
 
 ### Prepare Inputs
 
@@ -98,10 +101,10 @@ Use `user_queries/user_query_29` or `user_queries/user_query_35` for the other e
 
 For the artwork example, the default run directory is `cache/user_queries/user_query_03/`. It contains the intermediate artifacts and the exported `evaluation.json`. Reuse the directory to resume, or pass a different `--cache_path` prefix ending in a slash to start a fresh run.
 
-**Render audio.** When a run generates speech jobs, it also writes `evaluation_with_audio_settings.json`. Set `MINIMAX_API` to render the audio. For the continuous-music example, point `--music-root` to a local JamendoLyrics library.
+**Render audio.** When a run generates speech jobs, it also writes `evaluation_with_audio_settings.json`. For the continuous-music example, point `--music-root` to a local JamendoLyrics library.
 
 ```bash
-python synthesize_audio.py --input-cache-dir cache/user_queries/user_query_29 --music-root /path/to/JamendoLyrics
+python synthesize_audio.py --input-cache-dir cache/user_queries/user_query_29 --config /path/to/voices.json --music-root /path/to/JamendoLyrics
 ```
 
 Omit `--music-root` for runs without background-music jobs. The audio step writes playable media and `evaluation_ready.json` to the run directory.

@@ -1,5 +1,5 @@
 {
-  "source": "https://api.minimax.cn/v1/get_voice",
+  "source": "https://your-tts-gateway.example/v1/get_voice",
   "system_voice": [
     {
       "voice_id": "male-qn-qingse",

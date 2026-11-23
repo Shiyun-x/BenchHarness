@@ -15,7 +15,6 @@
 
 | 参数 | 当前默认值或含义 |
 | --- | --- |
-| `base_url` | `https://api.minimax.cn/v1`，实际请求追加 `/t2a_v2`；海外站可按账号使用对应入口 |
 | `model` | `speech-2.8-hd` |
 | `sample_rate` | `32000` Hz，输出 16-bit 单声道音频 |
 | `audio_format` | 共享配置默认 `flac`，可选 `wav`；旧配置省略该项时仍使用 WAV |
@@ -37,19 +36,7 @@
 | `rpm` | 全批次每分钟请求数上限，当前按账户额度设为 `20`；命令行 `--rpm` 优先，20 RPM 对应平均每 3 秒发出一次请求 |
 | `max_attempts` | 每个片段最多请求 `6` 次，包含首次请求；鉴权、余额和参数等不可重试错误会直接报错 |
 
-当前默认配置面向英文材料；其他语言或音色要求可以从完整音色目录中选取合适 ID，另存配置并使用 `--config`。API Key 仅通过环境变量读取，不写入共享 JSON 或本地 TXT 文件。一键脚本 `synthesize_audio.py` 默认使用 `MINIMAX_API`，也兼容旧名 `MINIMAX_API_KEY`；Windows 下支持读取用户和系统保存的环境变量。读取成功时控制台显示所用变量名和来源，不显示密钥值。`--dry-run` 不读取密钥。
-
-在某个 PowerShell 终端切换到第二个密钥，只需指定变量名，无需复制密钥值：
-
-```powershell
-$env:MINIMAX_API_ENV = 'MINIMAX_API_2'
-```
-
-随后从同一终端启动合成命令，会优先读取该终端的 `MINIMAX_API_2`；若终端尚未刷新，也会读取 Windows 用户／系统环境中的 `MINIMAX_API_2`。找不到第二个密钥时会报错，不会自动改用第一个。此设置仅作用于当前终端和之后启动的子进程；已运行的合成进程需要重新启动。在当前终端切回第一个密钥：
-
-```powershell
-$env:MINIMAX_API_ENV = 'MINIMAX_API'
-```
+默认音色面向英文材料，其他语言或音色可从完整目录中选择。
 
 ## 音色如何分配
 

@@ -1,5 +1,6 @@
 {
-  "base_url": "https://api.minimax.cn/v1",
+  "base_url": "https://your-tts-gateway.example/v1",
+  "api_key_env": "YOUR_TTS_API_KEY_ENV",
   "model": "speech-2.8-turbo",
   "sample_rate": 32000,
   "audio_format": "flac",

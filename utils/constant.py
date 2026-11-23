@@ -23,8 +23,8 @@ def str_to_bool(value):
     return True  # default return True
 
 
-API_BASE_URL = os.getenv('API_BASE_URL', "https://api.bltcy.ai/v1")
-API_KEY = os.getenv("LLM_API_KEY", "")
+API_BASE_URL = os.getenv("YOUR_LLM_BASE_URL_ENV", "")
+API_KEY = os.getenv("YOUR_LLM_API_KEY_ENV", "")
 
 NOT_SUPPORT_SENDER = ["mistral", "groq"]
 MUST_ADD_USER = ["deepseek/deepseek-reasoner", "o1-mini"]

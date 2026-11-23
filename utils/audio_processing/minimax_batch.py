@@ -1,7 +1,7 @@
 """Deliver deferred TTS scripts with MiniMax, then optionally overlay their segments.
 
 python -m utils.audio_processing.minimax_batch --eval-json manifest.json --config voices.json
-The API key is read only from MINIMAX_API_KEY. --dry-run exports requests without API calls.
+Use the configured key environment variable for synthesis. --dry-run exports requests without API calls.
 """
 from __future__ import annotations
 
@@ -31,9 +31,11 @@ from utils.audio_processing.audio_rendering import read_audio, render_audio, ove
 from utils.audio_processing.audio_formats import audio_format, format_record
 from utils.audio_processing.audio_receipts import write_receipt
 from utils.audio_processing.speaker_batch import synthesis_mode, prepare_groups, process_speaker_records
+from utils.model_config import _windows_environment_variable
 
 
-DEFAULT_BASE_URL = 'https://api.minimax.cn/v1'
+DEFAULT_BASE_URL = 'https://your-tts-gateway.example/v1'
+DEFAULT_API_KEY_ENV = 'YOUR_TTS_API_KEY_ENV'
 DEFAULT_VOICE_CONFIG = Path(__file__).resolve().parents[1] / 'resources' / 'minimax_voices.json'
 DEFAULT_CONCURRENCY = 20
 LANGUAGES = dict(zip(
@@ -204,9 +206,25 @@ def _runtime_config(config):
     return {**config, '_request_limiter': RequestLimiter(resolve_rpm(config))}
 
 
+def get_api_key(api_env=None, *, config=None):
+    name = api_env if api_env is not None else (config or {}).get('api_key_env', DEFAULT_API_KEY_ENV)
+    if not isinstance(name, str) or not name.strip() or '=' in name or '\0' in name:
+        raise ValueError('Set api_key_env or --api-env to an environment variable name.')
+    name = name.strip()
+    value = os.environ.get(name, '').strip()
+    if not value and os.name == 'nt':
+        value = _windows_environment_variable(name)
+    if not value:
+        raise ValueError(f'Set {name} in your environment before synthesis.')
+    return value
+
+
 def request_minimax(payload, api_key, config):
     """Fetch non-streaming audio bytes; business failures never become audio files."""
-    endpoint = config.get('base_url', DEFAULT_BASE_URL).rstrip('/') + '/t2a_v2'
+    base_url = config.get('base_url', DEFAULT_BASE_URL)
+    if not isinstance(base_url, str) or not base_url.strip() or base_url.rstrip('/') == DEFAULT_BASE_URL:
+        raise ValueError('Set base_url in the voice configuration to your speech gateway URL.')
+    endpoint = base_url.rstrip('/') + '/t2a_v2'
     request = Request(endpoint, data=json.dumps(payload).encode('utf-8'),
                       headers={'Authorization': 'Bearer ' + api_key, 'Content-Type': 'application/json'})
     limiter = config.get('_request_limiter') or RequestLimiter(resolve_rpm(config))
@@ -365,7 +383,7 @@ def process_record(record, config, api_key=None, *, dry_run=False, synthesize=re
     if dry_run:
         return {'status': 'planned', **plan}
     if not api_key:
-        raise ValueError('set MINIMAX_API_KEY before synthesis')
+        raise ValueError('Set the speech API key before synthesis.')
     config = _runtime_config(config)
     for segment in plan['segments']:
         _synthesize_segment(segment, config, api_key, synthesize)
@@ -418,7 +436,7 @@ def process_records(records, config, api_key=None, *, concurrency=None, dry_run=
             finish(index, {'status': 'planned', **plan})
         return results
     if not api_key:
-        raise ValueError('set MINIMAX_API_KEY before synthesis')
+        raise ValueError('Set the speech API key before synthesis.')
 
     jobs = {}
     remaining = [len(plan['segments']) for plan in plans]
@@ -478,6 +496,7 @@ def main():
     parser.add_argument('--eval-json', required=True, type=Path)
     parser.add_argument('--config', type=Path, default=DEFAULT_VOICE_CONFIG,
                         help='Defaults to utils/resources/minimax_voices.json.')
+    parser.add_argument('--api-env', help='Environment variable containing the speech API key.')
     parser.add_argument('--dry-run', action='store_true', help='Export planned requests; do not call MiniMax')
     parser.add_argument('--report', type=Path)
     parser.add_argument('--concurrency', type=int, help='Maximum simultaneous TTS requests; default from config or 20.')
@@ -497,9 +516,10 @@ def main():
         records = [format_record(record, kind) for record in records]
     except ValueError as exc:
         parser.error(str(exc))
-    api_key = os.environ.get('MINIMAX_API_KEY')
-    if not args.dry_run and not api_key:
-        parser.error('set MINIMAX_API_KEY before synthesis')
+    try:
+        api_key = None if args.dry_run else get_api_key(args.api_env, config=config)
+    except ValueError as exc:
+        parser.error(str(exc))
     if not args.dry_run and kind != 'wav':
         converted = args.eval_json.with_name(args.eval_json.stem + '.' + kind + '.json')
         write_json(converted, records)

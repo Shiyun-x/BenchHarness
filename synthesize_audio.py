@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 import sys
 
@@ -13,47 +12,11 @@ from utils.audio_processing.audio_formats import audio_format, format_record, re
 from utils.audio_processing.library_paths import resolve_noise_root
 from utils.audio_processing.speaker_batch import synthesis_mode as resolve_synthesis_mode, prepare_groups
 from utils.audio_processing.minimax_batch import (
-    DEFAULT_VOICE_CONFIG, plan_record, process_records, resolve_concurrency, resolve_rpm, write_json)
+    DEFAULT_VOICE_CONFIG, get_api_key, plan_record, process_records, resolve_concurrency, resolve_rpm, write_json)
 
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_CACHE_DIR = ROOT / 'cache' / 'user_queries' / 'user_query_07'
-
-
-def _windows_environment(name):
-    """Read settings added after this terminal started, without printing secrets."""
-    if os.name != 'nt':
-        return None
-    import winreg
-    for hive, path in (
-            (winreg.HKEY_CURRENT_USER, 'Environment'),
-            (winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment')):
-        try:
-            with winreg.OpenKey(hive, path) as key:
-                value, _ = winreg.QueryValueEx(key, name)
-                if isinstance(value, str) and value.strip():
-                    return value.strip()
-        except OSError:
-            continue
-    return None
-
-
-def get_api_key(api_env=None):
-    selected = (api_env or os.environ.get('MINIMAX_API_ENV', 'MINIMAX_API')).strip()
-    if selected not in ('MINIMAX_API', 'MINIMAX_API_2'):
-        raise ValueError('MINIMAX_API_ENV must be MINIMAX_API or MINIMAX_API_2.')
-    names = (selected,) if selected == 'MINIMAX_API_2' else ('MINIMAX_API', 'MINIMAX_API_KEY')
-    for name in names:
-        value = os.environ.get(name)
-        if value and value.strip():
-            print(f'API key source: {name} (process environment)', flush=True)
-            return value.strip()
-    for name in names:
-        value = _windows_environment(name)
-        if value:
-            print(f'API key source: {name} (Windows environment)', flush=True)
-            return value
-    raise ValueError(f'Set {selected} in your environment before synthesis.')
 
 
 def noise_jobs(record):
@@ -125,8 +88,6 @@ def run_batch(input_cache_dir=DEFAULT_CACHE_DIR, config_path=None, *, dry_run=Fa
             api_env = policy.get('api_env')
         if synthesis_mode is None:
             synthesis_mode = policy.get('synthesis_mode')
-    if api_env is not None and api_env not in ('MINIMAX_API', 'MINIMAX_API_2'):
-        raise ValueError('Audio account must be MINIMAX_API or MINIMAX_API_2.')
     manifest = batch_dir / 'evaluation_with_audio_settings.json'
     source_manifest = manifest
     config_path = Path(config_path).resolve() if config_path else DEFAULT_VOICE_CONFIG
@@ -196,7 +157,7 @@ def run_batch(input_cache_dir=DEFAULT_CACHE_DIR, config_path=None, *, dry_run=Fa
             raise ValueError(f'Noise library meta.txt missing: {noise_root}; pass --noise-root with your TUT library directory.')
         from utils.audio_processing.add_noise import add_environmental_noise
         noise_backend = add_environmental_noise
-    api_key = api_key or (get_api_key(api_env) if api_env is not None else get_api_key())
+    api_key = api_key or get_api_key(api_env, config=config)
     if limit is not None or kind != 'wav' or output_dir is not None or (selection and manifest != selection):
         if not selection and limit is not None:
             manifest = batch_dir / f'evaluation_with_audio_settings{limit_suffix}.json'
@@ -267,8 +228,7 @@ def main(argv=None):
     parser.add_argument('--eval-json', type=Path,
                         help='Process this evaluation JSON only; recover scripts from same-directory audio settings.')
     parser.add_argument('--config', type=Path, help='Defaults to shared utils/resources/minimax_voices.json.')
-    parser.add_argument('--api-env', choices=('MINIMAX_API', 'MINIMAX_API_2'),
-                        help='Select a synthesis account without changing the global process environment.')
+    parser.add_argument('--api-env', help='Environment variable containing the speech API key.')
     parser.add_argument('--dry-run', action='store_true', help='Validate scripts and voices without API calls.')
     parser.add_argument('--limit', type=int, help='Process only the first N audio samples; save separate trial results.')
     parser.add_argument('--concurrency', type=int, help='Maximum simultaneous speech requests; default from config or 20.')
